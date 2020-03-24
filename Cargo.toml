@@ -1,0 +1,19 @@
+[package]
+name = "simsplice"
+version = "1.0.0"
+authors = ["Ben Booth <benwbooth@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+regex = "*"
+structopt = "*"
+structopt-derive = "*"
+bio = "*"
+duct = "*"
+anyhow = "*"
+
+[dependencies.rust-htslib]
+git = "https://github.com/rust-bio/rust-htslib.git"
+
+#[profile.dev]
+#opt-level = 2
