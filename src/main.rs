@@ -1,12 +1,17 @@
 use structopt::StructOpt;
 
+use std::str;
 use std::vec::Vec;
 use std::ops::Range;
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 use rust_htslib::bam::record::Cigar;
 use rust_htslib::bam::record::CigarStringView;
-use rust_htslib::bam;
-use rust_htslib::bcf;
+use rust_htslib::{bam, bam::Read as BamRead};
+use rust_htslib::{bcf, bcf::Read as BcfRead};
+
+use bio::data_structures::interval_tree::IntervalTree;
 
 use anyhow::{Result, anyhow};
 
@@ -107,17 +112,113 @@ struct Options {
     vcffile: String,
     #[structopt(help = "Input BAM file", name="BAMFILE")]
     bamfile: String,
-    #[structopt(long = "out", help = "Output file prefix", name="PREFIX", default_value="")]
-    out: String,
+    #[structopt(long = "outbam", help = "Output BAM file", name="OUTBAMFILE", default_value="")]
+    outbamfile: String,
+    #[structopt(long = "outfastq", help = "Output FASTQ file", name="OUTFASTQFILE", default_value="")]
+    outfastqfile: String,
 }
+
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone)]
+struct Splice {
+    start: u32,
+    stop: u32,
+    replacement: Vec<u8>,
+}
+
+struct Replacement<'a> {
+    pos: u32,
+    replacement: &'a[u8],
+}
+
+//437
 
 fn main() -> Result<()> {
     std::env::set_var("RUST_BACKTRACE", "full");
     std::env::set_var("RUST_LIB_BACKTRACE", "1");
     let options = Options::from_args();
-    let mut bam = bam::Reader::from_path(&options.bamfile)?;
-    let mut vcf = bcf::Reader::from_path(&options.vcffile)?;
+
+    let mut reference = BTreeMap::<String,Vec<u8>>::new();
     let fasta = fasta::Reader::from_file(&options.reference)?;
+    for r in fasta.records() {
+        let r = r?;
+        reference.insert(String::from(r.id()), Vec::from(r.seq()));
+    }
+
+    let mut splices = BTreeMap::<String,BTreeSet<Splice>>::new();
+    let mut vcf = bcf::Reader::from_path(&options.vcffile)?;
+    for r in vcf.records() {
+        let r = r?;
+        if r.allele_count() > 2 {
+            Err(anyhow!("Can't handle multiple alleles in VCF file: {:?}", r))?;
+        }
+        if r.allele_count() > 0 {
+            let rid = r.rid().r()?;
+            let refname = str::from_utf8(r.header().rid2name(rid)?)?;
+            let pos = r.pos();
+            let alleles = r.alleles();
+            let ref_allele = alleles.get(0).r()?;
+            for allele in &alleles[1..] {
+                if !splices.contains_key(refname) {
+                    splices.insert(String::from(refname), BTreeSet::new());
+                }
+                splices.get_mut(refname).r()?.insert(Splice{
+                    start: pos,
+                    stop: pos+ref_allele.len() as u32,
+                    replacement: Vec::from(*allele),
+                });
+            }
+        }
+    }
+
+    let mut refpos = 0u32;
+    let mut pos = 0u32;
+    let mut tree = BTreeMap::<String,IntervalTree<u32,Replacement>>::new();
+    for (chr, splices) in &splices {
+        if !tree.contains_key(chr) {
+            tree.insert(String::from(chr), IntervalTree::new());
+            pos = 0;
+            refpos = 0;
+        }
+        for splice in splices {
+            if refpos < splice.start {
+                tree.get_mut(chr).r()?.insert(refpos..splice.start, Replacement {
+                    pos: pos-refpos,
+                    replacement: &reference.get(chr).r()?[refpos as usize..splice.start as usize],
+                });
+                pos += splice.start-refpos;
+            }
+            tree.get_mut(chr).r()?.insert(splice.start..splice.stop, Replacement {
+                pos: pos-refpos,
+                replacement: &splice.replacement,
+            });
+            pos += splice.replacement.len() as u32;
+            refpos = splice.stop;
+        }
+    }
+
+    let mut bam = bam::Reader::from_path(&options.bamfile)?;
+    let mut outbam = bam::Writer::from_path(
+        &options.outbamfile,
+        &bam::Header::from_template(bam.header()),
+        bam::Format::BAM)?;
+    let mut outfastq = bio::io::fastq::Writer::to_file(&options.outfastqfile)?;
+    for r in bam.records() {
+        let r = r?;
+        let tid = r.tid();
+        let refname = str::from_utf8(bam.header().target_names().get(tid).r()?)?;
+        let exons = cigar2exons(&r.cigar(), r.pos() as u64)?;
+        for exon in &exons {
+            for replacement in tree.get(refname).r()?.find(exon.0..exon.0+1) {
+                outbam.write(&r);
+                outfastq.write(
+                    str::from_utf8(r.qname())?,
+                    None,
+                     r.seq().encoded,
+                     r.qual(),
+                );
+            }
+        }
+    }
 
     Ok(())
 }
