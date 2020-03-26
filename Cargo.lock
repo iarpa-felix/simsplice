@@ -105,7 +105,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc0376f0882981c7440386b060ce1c5fdccf789f2e1e58fb3539745d19d449bd"
 dependencies = [
  "approx",
- "bio-types",
+ "bio-types 0.5.1",
  "bit-set",
  "bv",
  "bytecount",
@@ -141,6 +141,20 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94fb49f226ebd14a668fbcf268241a3d81021e4f6882dda8bbc42f05ea823fd4"
 dependencies = [
+ "lazy_static",
+ "quick-error",
+ "regex",
+ "serde",
+ "serde_derive",
+]
+
+[[package]]
+name = "bio-types"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fff2d34cf375fe6e66400b3669e6d10d154aece39ac4898523b2e65abc0b38c"
+dependencies = [
+ "derive-new",
  "lazy_static",
  "quick-error",
  "regex",
@@ -313,6 +327,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef8ae57c4978a2acd8b869ce6b9ca1dfe817bff704c220209fdef2c0b75a01b9"
 
 [[package]]
+name = "derive-new"
+version = "0.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71f31892cd5c62e414316f2963c5689242c43d8e7bbcaaeca97e5e28c95d91d9"
+dependencies = [
+ "proc-macro2 1.0.9",
+ "quote 1.0.3",
+ "syn 1.0.17",
+]
+
+[[package]]
 name = "doc-comment"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -416,7 +441,8 @@ dependencies = [
 [[package]]
 name = "hts-sys"
 version = "1.10.2"
-source = "git+https://github.com/rust-bio/rust-htslib.git#3100b8cec0d53874c47479d69f0fa64bdb781a1d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9985b595db4b1dc0972a475fb2ea79fece907b6f5aa193e32e71f469c02ae67"
 dependencies = [
  "bindgen",
  "bzip2-sys",
@@ -445,6 +471,28 @@ name = "ieee754"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9007da9cacbd3e6343da136e98b0d2df013f553d35bdec8b518f07bea768e19c"
+
+[[package]]
+name = "interpol"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79b680905ec154eafb74ff0ff47a23b8e23273161dd29a434919ec90570b28da"
+dependencies = [
+ "interpol-impl",
+ "proc-macro-hack",
+]
+
+[[package]]
+name = "interpol-impl"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6aaa28ffc97e794ef13f2a6a4117c983c1b6bcc60ea68f3dee64e4d49fdfef3e"
+dependencies = [
+ "proc-macro-hack",
+ "proc-macro2 1.0.9",
+ "quote 1.0.3",
+ "syn 1.0.17",
+]
 
 [[package]]
 name = "itertools"
@@ -620,6 +668,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "num_cpus"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46203554f085ff89c235cd12f7075f3233af9b11ed7c9e16dfe2560d03313ce6"
+dependencies = [
+ "hermit-abi",
+ "libc",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -716,6 +774,12 @@ dependencies = [
  "syn-mid",
  "version_check",
 ]
+
+[[package]]
+name = "proc-macro-hack"
+version = "0.5.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcfdefadc3d57ca21cf17990a28ef4c0f7c61383a28cb7604cf4a18e6ede1420"
 
 [[package]]
 name = "proc-macro2"
@@ -909,10 +973,11 @@ checksum = "7fe5bd57d1d7414c6b5ed48563a2c855d995ff777729dcd91c369ec7fea395ae"
 
 [[package]]
 name = "rust-htslib"
-version = "0.27.1-alpha.0"
-source = "git+https://github.com/rust-bio/rust-htslib.git#3100b8cec0d53874c47479d69f0fa64bdb781a1d"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01385282df10e13f062ab95a4c3a799bb4cb13ae519cf08197f97812912ffccf"
 dependencies = [
- "bio-types",
+ "bio-types 0.6.0",
  "bitflags",
  "custom_derive",
  "hts-sys",
@@ -953,6 +1018,12 @@ name = "ryu"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "535622e6be132bccd223f4bb2b8ac8d53cda3c7a6394944d3b2b33fb974f9d76"
+
+[[package]]
+name = "scopeguard"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 
 [[package]]
 name = "semver"
@@ -1003,8 +1074,11 @@ dependencies = [
  "anyhow",
  "bio",
  "duct",
+ "interpol",
+ "num_cpus",
  "regex",
  "rust-htslib",
+ "scopeguard",
  "structopt",
  "structopt-derive",
 ]

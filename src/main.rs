@@ -6,6 +6,7 @@ use std::ops::Range;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashSet;
+use std::path::Path;
 
 use rust_htslib::bam::record::Cigar;
 use rust_htslib::bam::record::CigarStringView;
@@ -17,6 +18,10 @@ use bio::data_structures::interval_tree::IntervalTree;
 use anyhow::{Result, anyhow};
 
 use bio::io::fasta;
+use duct::cmd;
+use interpol::{format as f};
+use num_cpus;
+use scopeguard::defer;
 
 // Examples:
 
@@ -78,22 +83,22 @@ impl<T> ToResult<T> for Option<T> {
     }
 }
 
-pub fn cigar2exons(cigar: &CigarStringView, pos: u32) -> Result<Vec<Range<u32>>> {
-    let mut exons = Vec::<Range<u32>>::new();
+pub fn cigar2exons(cigar: &CigarStringView, pos: i64) -> Result<Vec<Range<i64>>> {
+    let mut exons = Vec::<Range<i64>>::new();
     let mut pos = pos;
     for op in cigar {
         match op {
             &Cigar::Match(length) |
             &Cigar::Equal(length) |
             &Cigar::Diff(length) => {
-                pos += length as u32;
+                pos += length as i64;
                 if length > 0 {
-                    exons.push(Range{start: pos - length as u32, end: pos});
+                    exons.push(Range{start: pos - length as i64, end: pos});
                 }
             }
             &Cigar::RefSkip(length) |
             &Cigar::Del(length) => {
-                pos += length as u32;
+                pos += length as i64;
             }
             &Cigar::Ins(_) |
             &Cigar::SoftClip(_) |
@@ -121,13 +126,13 @@ struct Options {
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone)]
 struct Splice {
-    start: u32,
-    stop: u32,
+    start: i64,
+    stop: i64,
     replacement: Vec<u8>,
 }
 
 struct Replacement<'a> {
-    pos: u32,
+    pos: i64,
     replacement: &'a[u8],
 }
 
@@ -166,7 +171,7 @@ fn main() -> Result<()> {
                 }
                 splices.get_mut(refname).r()?.insert(Splice{
                     start: pos,
-                    stop: pos+ref_allele.len() as u32,
+                    stop: pos+ref_allele.len() as i64,
                     replacement: Vec::from(*allele),
                 });
             }
@@ -174,16 +179,16 @@ fn main() -> Result<()> {
     }
 
     // build an interval tree using the splice positions to map between original and modified reference coordinates
-    let mut reflen = 0u32;
-    let mut refpos = 0u32;
-    let mut pos = 0u32;
-    let mut tree = BTreeMap::<String,IntervalTree<u32,Replacement>>::new();
+    let mut reflen = 0i64;
+    let mut refpos = 0i64;
+    let mut pos = 0i64;
+    let mut tree = BTreeMap::<String,IntervalTree<i64,Replacement>>::new();
     for (chr, splices) in &splices {
         if !tree.contains_key(chr) {
             tree.insert(String::from(chr), IntervalTree::new());
             pos = 0;
             refpos = 0;
-            reflen = reference.get(chr).r()?.len() as u32;
+            reflen = reference.get(chr).r()?.len() as i64;
         }
         for splice in splices {
             if refpos < splice.start {
@@ -197,7 +202,7 @@ fn main() -> Result<()> {
                 pos: pos-refpos,
                 replacement: &splice.replacement,
             });
-            pos += splice.replacement.len() as u32;
+            pos += splice.replacement.len() as i64;
             refpos = splice.stop;
         }
         if refpos < reflen {
@@ -207,6 +212,15 @@ fn main() -> Result<()> {
             });
         }
     }
+
+    // sort the bam file by name
+    let name_sorted_bam = f!("{options.bamfile}.tmp.{std::process::id()}");
+    defer! {
+        if Path::new(&name_sorted_bam).exists() {
+            let _ = std::fs::remove_file(&name_sorted_bam);
+        }
+    }
+    cmd!("samtools","sort","-@",num_cpus::get().to_string(),"-n","-o",&name_sorted_bam,&options.bamfile).run()?;
 
     // get the list of unmapped read names from the BAM file. These will be used to construct new reads for large insertions
     let mut unmapped = HashSet::<String>::new();
@@ -220,39 +234,67 @@ fn main() -> Result<()> {
     }
 
     // read the BAM file again and write the output BAM and FASTQ files
-    let mut bam = bam::Reader::from_path(&options.bamfile)?;
+    let name_sorted_outbam = f!("{options.outbamfile}.name_sorted.bam");
+    defer! {
+        if Path::new(&name_sorted_outbam).exists() {
+            let _ = std::fs::remove_file(&name_sorted_outbam);
+        }
+    }
+    let mut bam = bam::Reader::from_path(&name_sorted_bam)?;
     let mut outbam = bam::Writer::from_path(
-        &options.outbamfile,
+        &name_sorted_outbam,
         &bam::Header::from_template(bam.header()),
         bam::Format::BAM)?;
     let mut outfastq = bio::io::fastq::Writer::to_file(&options.outfastqfile)?;
     let header = bam.header().clone();
+    let mut reads = Vec::<bam::Record>::new();
+
+    let mut process_reads = |reads: &mut Vec<bam::Record>| -> Result<()> {
+        if reads.len() == 0 {
+            return Err(anyhow!("reads is empty!"));
+        }
+        if reads.len() > 2 {
+            return Err(anyhow!("More than two reads in reads!: {}", reads.len()));
+        }
+        for r in reads {
+            let mut newr = r.clone();
+            let tid = r.tid();
+            let refname = str::from_utf8(header.target_names().get(tid as usize).r()?)?;
+            let exons = cigar2exons(&r.cigar(), r.pos() as i64)?;
+            for exon in &exons {
+                for replacement in tree.get(refname).r()?.find(exon.start..exon.start+1) {
+                    newr.set_pos(0);
+                    newr.set_mpos(0);
+                    let cigar = Vec::from(r.cigar().iter().map(|c| c.clone()).collect::<Vec<Cigar>>());
+                    newr.set(
+                        r.qname(),
+                        Some(&bam::record::CigarString(cigar)),
+                        r.seq().encoded,
+                        r.qual());
+                }
+            }
+            outbam.write(&newr)?;
+            outfastq.write(
+                str::from_utf8(newr.qname())?,
+                None,
+                newr.seq().encoded,
+                newr.qual(),
+            )?;
+        }
+        Ok(())
+    };
+
     for r in bam.records() {
         let r = r?;
-        let mut newr = r.clone();
-        let tid = r.tid();
-        let refname = str::from_utf8(header.target_names().get(tid as usize).r()?)?;
-        let exons = cigar2exons(&r.cigar(), r.pos() as u32)?;
-        for exon in &exons {
-            for replacement in tree.get(refname).r()?.find(exon.start..exon.start+1) {
-                newr.set_pos(0);
-                newr.set_mpos(0);
-                let cigar = Vec::from(r.cigar().iter().map(|c| c.clone()).collect::<Vec<Cigar>>());
-                newr.set(
-                    r.qname(),
-                    Some(&bam::record::CigarString(cigar)),
-                    r.seq().encoded,
-                    r.qual());
-                outbam.write(&newr);
-                outfastq.write(
-                    str::from_utf8(newr.qname())?,
-                    None,
-                     newr.seq().encoded,
-                     newr.qual(),
-                );
-            }
+        if !reads.is_empty() && r.qname() != reads.get(0).r()?.qname() {
+            process_reads(&mut reads)?;
+            reads.clear();
         }
+        reads.push(r);
     }
-
+    if !reads.is_empty() {
+        process_reads(&mut reads)?;
+    }
+    cmd!("samtools","sort","-@",num_cpus::get().to_string(),"-o",&options.outbamfile,&name_sorted_outbam).run()?;
     Ok(())
 }
