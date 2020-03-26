@@ -5,6 +5,7 @@ use std::vec::Vec;
 use std::ops::Range;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::collections::HashSet;
 
 use rust_htslib::bam::record::Cigar;
 use rust_htslib::bam::record::CigarStringView;
@@ -77,22 +78,22 @@ impl<T> ToResult<T> for Option<T> {
     }
 }
 
-pub fn cigar2exons(cigar: &CigarStringView, pos: u64) -> Result<Vec<Range<u64>>> {
-    let mut exons = Vec::<Range<u64>>::new();
+pub fn cigar2exons(cigar: &CigarStringView, pos: u32) -> Result<Vec<Range<u32>>> {
+    let mut exons = Vec::<Range<u32>>::new();
     let mut pos = pos;
     for op in cigar {
         match op {
             &Cigar::Match(length) |
             &Cigar::Equal(length) |
             &Cigar::Diff(length) => {
-                pos += length as u64;
+                pos += length as u32;
                 if length > 0 {
-                    exons.push(Range{start: pos - length as u64, end: pos});
+                    exons.push(Range{start: pos - length as u32, end: pos});
                 }
             }
             &Cigar::RefSkip(length) |
             &Cigar::Del(length) => {
-                pos += length as u64;
+                pos += length as u32;
             }
             &Cigar::Ins(_) |
             &Cigar::SoftClip(_) |
@@ -137,6 +138,7 @@ fn main() -> Result<()> {
     std::env::set_var("RUST_LIB_BACKTRACE", "1");
     let options = Options::from_args();
 
+    // read in the reference FASTA file
     let mut reference = BTreeMap::<String,Vec<u8>>::new();
     let fasta = fasta::Reader::from_file(&options.reference)?;
     for r in fasta.records() {
@@ -144,6 +146,7 @@ fn main() -> Result<()> {
         reference.insert(String::from(r.id()), Vec::from(r.seq()));
     }
 
+    // get the list of splice positions from the VCF file
     let mut splices = BTreeMap::<String,BTreeSet<Splice>>::new();
     let mut vcf = bcf::Reader::from_path(&options.vcffile)?;
     for r in vcf.records() {
@@ -170,6 +173,8 @@ fn main() -> Result<()> {
         }
     }
 
+    // build an interval tree using the splice positions to map between original and modified reference coordinates
+    let mut reflen = 0u32;
     let mut refpos = 0u32;
     let mut pos = 0u32;
     let mut tree = BTreeMap::<String,IntervalTree<u32,Replacement>>::new();
@@ -178,6 +183,7 @@ fn main() -> Result<()> {
             tree.insert(String::from(chr), IntervalTree::new());
             pos = 0;
             refpos = 0;
+            reflen = reference.get(chr).r()?.len() as u32;
         }
         for splice in splices {
             if refpos < splice.start {
@@ -194,27 +200,55 @@ fn main() -> Result<()> {
             pos += splice.replacement.len() as u32;
             refpos = splice.stop;
         }
+        if refpos < reflen {
+            tree.get_mut(chr).r()?.insert(refpos..reflen, Replacement {
+                pos: pos-refpos,
+                replacement: &reference.get(chr).r()?[refpos as usize..reflen as usize],
+            });
+        }
     }
 
+    // get the list of unmapped read names from the BAM file. These will be used to construct new reads for large insertions
+    let mut unmapped = HashSet::<String>::new();
+    let mut bam = bam::Reader::from_path(&options.bamfile)?;
+    for r in bam.records() {
+        let r = r?;
+        let tid = r.tid();
+        if tid < 0 {
+            unmapped.insert(String::from(str::from_utf8(r.qname())?));
+        }
+    }
+
+    // read the BAM file again and write the output BAM and FASTQ files
     let mut bam = bam::Reader::from_path(&options.bamfile)?;
     let mut outbam = bam::Writer::from_path(
         &options.outbamfile,
         &bam::Header::from_template(bam.header()),
         bam::Format::BAM)?;
     let mut outfastq = bio::io::fastq::Writer::to_file(&options.outfastqfile)?;
+    let header = bam.header().clone();
     for r in bam.records() {
         let r = r?;
+        let mut newr = r.clone();
         let tid = r.tid();
-        let refname = str::from_utf8(bam.header().target_names().get(tid).r()?)?;
-        let exons = cigar2exons(&r.cigar(), r.pos() as u64)?;
+        let refname = str::from_utf8(header.target_names().get(tid as usize).r()?)?;
+        let exons = cigar2exons(&r.cigar(), r.pos() as u32)?;
         for exon in &exons {
-            for replacement in tree.get(refname).r()?.find(exon.0..exon.0+1) {
-                outbam.write(&r);
+            for replacement in tree.get(refname).r()?.find(exon.start..exon.start+1) {
+                newr.set_pos(0);
+                newr.set_mpos(0);
+                let cigar = Vec::from(r.cigar().iter().map(|c| c.clone()).collect::<Vec<Cigar>>());
+                newr.set(
+                    r.qname(),
+                    Some(&bam::record::CigarString(cigar)),
+                    r.seq().encoded,
+                    r.qual());
+                outbam.write(&newr);
                 outfastq.write(
-                    str::from_utf8(r.qname())?,
+                    str::from_utf8(newr.qname())?,
                     None,
-                     r.seq().encoded,
-                     r.qual(),
+                     newr.seq().encoded,
+                     newr.qual(),
                 );
             }
         }
