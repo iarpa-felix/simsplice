@@ -8,71 +8,55 @@ use std::collections::BTreeSet;
 use std::collections::HashSet;
 use std::path::Path;
 
+use rust_htslib::bam::record::Record;
 use rust_htslib::bam::record::Cigar;
 use rust_htslib::bam::record::CigarStringView;
 use rust_htslib::{bam, bam::Read as BamRead};
 use rust_htslib::{bcf, bcf::Read as BcfRead};
+use rust_htslib::bam::ext::BamRecordExtensions;
 
 use bio::data_structures::interval_tree::IntervalTree;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
+use anyhow::anyhow;
 
 use bio::io::fasta;
 use duct::cmd;
-use interpol::{format as f};
+use interpol::{format as f, println, eprintln};
 use num_cpus;
 use scopeguard::defer;
+use regex::Regex;
+use lazy_static::lazy_static;
+use lazy_regex::regex;
 
-// Examples:
+use slog::info;
+use sloggers::Build;
+use sloggers::terminal::{TerminalLoggerBuilder, Destination};
+use sloggers::types::Severity;
 
-// Suppose that we have sequenced a genome of length 10 bp. Let n1,
-// n2,..., n8 be the number of reads beginning at each base. Suppose
-// the reads are each 3 bases long, the bases in the genome are
-// b1,b2,b3,b4,b5,b6,b7,b8,b9,b10, and the insertion that is to be
-// replaced in the simulation (i.e., the "sequenced insertion") is at
-// bases b3,b4,b5
-//
-// Case 1: simulated insertion shorter than sequenced insertion
-//
-// Let the simulated insertion be b3',b4'; that is, we wish to
-// simulate reads from the following genome: b1,b2,b3',b4',b6,b7,b8,b9,b10.
-// The reads that would be simulated are as follows (frequencies in
-// parentheses):
-//
-// (n1) b1,b2,b3'
-// (n2) b2,b3',b4'
-// (n3) b3',b4',b6
-// (n4) b4',b6,b7
-// (n6) b6,b7,b8
-// (n7) b7,b8,b9
-// (n8) b8,b9,b10
-//
-// Case 2: simulated insertion longer than sequenced insertion
-//
-// Let the simulated insertion be b3',b4',b5',b6',b7',b8',b9'; that
-// is, we wish to simulate reads from the following genome:
-// b1,b2,b3',b4',b5',b6',b7',b8',b9',b6,b7,b8,b9,b10. The reads that
-// would be simulated are as follows:
-//
-// (n1) b1,b2,b3'
-// (n2) b2,b3',b4'
-// (n3) b3',b4',b5'
-// (n4) b4',b5',b6'
-// (n5) b5',b6',b7'
-// *(n3) b6',b7',b8'
-// (n4) b7',b8',b9'
-// (n5) b8',b9',b6
-// *(n3) b9',b6,b7
-// (n6) b6,b7,b8
-// (n7) b7,b8,b9
-// (n8) b8,b9,b10
-//
-// Starting at the starred locations, a variant of the algorithm
-// that reduces the periodicity of the simulated read depths would be
-// to randomly choose between the order n3,n4,n5 and n5,n4,n3. However,
-// fundamentally it is probably better to start with a sequenced genome
-// with an insertion that is not much shorter than the one that is to
-// be simulated.
+use rand::Rng;
+use rand::distributions::Alphanumeric;
+use shell_words;
+use shell_words::quote;
+
+// INPUTS: reference fasta file, input vcf file, input bam file
+// OUTPUTS: modified reference fasta file, fastq file with modified reads
+
+// Case 1: insertion is smaller than original
+// NOTE: If the start of the read is inside the spliced out region, throw out the read
+
+// Case 2: insertion larger than original
+// NOTE: Newly inserted to-the-right region bases get randomly assigned read start site values from -1000 .. insertion ... 1000 bp
+
+// create histogram of start sites for filled in region
+// fill in with
+
+// 1. read gets passed through unchanged
+// 2. read gets removed
+// 3. read sequence gets changed:
+//   a. read is moved due to previous splice(s)
+//   b. read is moved to fill in start site histogram for insertion
+
 
 trait ToResult<T> {
     fn r(self) -> Result<T>;
@@ -81,32 +65,6 @@ impl<T> ToResult<T> for Option<T> {
     fn r(self) -> Result<T> {
         self.ok_or_else(|| anyhow!("NoneError"))
     }
-}
-
-pub fn cigar2exons(cigar: &CigarStringView, pos: i64) -> Result<Vec<Range<i64>>> {
-    let mut exons = Vec::<Range<i64>>::new();
-    let mut pos = pos;
-    for op in cigar {
-        match op {
-            &Cigar::Match(length) |
-            &Cigar::Equal(length) |
-            &Cigar::Diff(length) => {
-                pos += length as i64;
-                if length > 0 {
-                    exons.push(Range{start: pos - length as i64, end: pos});
-                }
-            }
-            &Cigar::RefSkip(length) |
-            &Cigar::Del(length) => {
-                pos += length as i64;
-            }
-            &Cigar::Ins(_) |
-            &Cigar::SoftClip(_) |
-            &Cigar::HardClip(_) |
-            &Cigar::Pad(_) => (),
-        };
-    }
-    Ok(exons)
 }
 
 #[derive(StructOpt, Debug)]
@@ -118,8 +76,8 @@ struct Options {
     vcffile: String,
     #[structopt(help = "Input BAM file", name="BAMFILE")]
     bamfile: String,
-    #[structopt(long = "outbam", help = "Output BAM file", name="OUTBAMFILE", default_value="")]
-    outbamfile: String,
+    #[structopt(long = "outfasta", help = "Output reference FASTA file", name="OUTFASTAFILE", default_value="")]
+    outfastafile: String,
     #[structopt(long = "outfastq", help = "Output FASTQ file", name="OUTFASTQFILE", default_value="")]
     outfastqfile: String,
 }
@@ -142,6 +100,12 @@ fn main() -> Result<()> {
     std::env::set_var("RUST_BACKTRACE", "full");
     std::env::set_var("RUST_LIB_BACKTRACE", "1");
     let options = Options::from_args();
+
+    let mut builder = TerminalLoggerBuilder::new();
+    builder.level(Severity::Info);
+    builder.destination(Destination::Stderr);
+
+    let log = builder.build()?;
 
     // read in the reference FASTA file
     let mut reference = BTreeMap::<String,Vec<u8>>::new();
@@ -178,6 +142,25 @@ fn main() -> Result<()> {
         }
     }
 
+    // collate the bam file by name
+    let collated_bam = f!(r#"{regex!(r"\.bam$").replace_all(&options.bamfile,"")}.collated.bam"#);
+    let cpus = num_cpus::get().to_string();
+    if !Path::new(&collated_bam).exists() {
+        let tmpid = rand::thread_rng().sample_iter(&Alphanumeric).take(10).collect::<String>();
+        let tmpfile = f!("{collated_bam}.{tmpid}");
+        let collate_cmd = vec![
+            "samtools","collate",
+            "-@",&cpus,
+            "-o",&tmpfile,
+            &options.bamfile,
+        ];
+        info!(log, "Running command: {}", shell_words::join(&collate_cmd));
+        cmd(collate_cmd[0],&collate_cmd[1..]).run()?;
+        info!(log, "Moving {} to {}", &tmpfile, &collated_bam);
+        std::fs::rename(&tmpfile, &collated_bam)?;
+    }
+    let mut bam = bam::Reader::from_path(&collated_bam)?;
+
     // build an interval tree using the splice positions to map between original and modified reference coordinates
     let mut reflen = 0i64;
     let mut refpos = 0i64;
@@ -213,56 +196,20 @@ fn main() -> Result<()> {
         }
     }
 
-    // sort the bam file by name
-    let name_sorted_bam = f!("{options.bamfile}.tmp.{std::process::id()}");
-    defer! {
-        if Path::new(&name_sorted_bam).exists() {
-            let _ = std::fs::remove_file(&name_sorted_bam);
-        }
-    }
-    cmd!("samtools","sort","-@",num_cpus::get().to_string(),"-n","-o",&name_sorted_bam,&options.bamfile).run()?;
-
-    // get the list of unmapped read names from the BAM file. These will be used to construct new reads for large insertions
-    let mut unmapped = HashSet::<String>::new();
-    let mut bam = bam::Reader::from_path(&options.bamfile)?;
-    for r in bam.records() {
-        let r = r?;
-        let tid = r.tid();
-        if tid < 0 {
-            unmapped.insert(String::from(str::from_utf8(r.qname())?));
-        }
-    }
-
-    // read the BAM file again and write the output BAM and FASTQ files
-    let name_sorted_outbam = f!("{options.outbamfile}.name_sorted.bam");
-    defer! {
-        if Path::new(&name_sorted_outbam).exists() {
-            let _ = std::fs::remove_file(&name_sorted_outbam);
-        }
-    }
-    let mut bam = bam::Reader::from_path(&name_sorted_bam)?;
-    let mut outbam = bam::Writer::from_path(
-        &name_sorted_outbam,
-        &bam::Header::from_template(bam.header()),
-        bam::Format::BAM)?;
+    let mut outfasta = bio::io::fasta::Writer::to_file(&options.outfastafile)?;
     let mut outfastq = bio::io::fastq::Writer::to_file(&options.outfastqfile)?;
     let header = bam.header().clone();
-    let mut reads = Vec::<bam::Record>::new();
+    let mut reads1 = Vec::<bam::Record>::new();
+    let mut reads2 = Vec::<bam::Record>::new();
 
     let mut process_reads = |reads: &mut Vec<bam::Record>| -> Result<()> {
-        if reads.len() == 0 {
-            return Err(anyhow!("reads is empty!"));
-        }
-        if reads.len() > 2 {
-            return Err(anyhow!("More than two reads in reads!: {}", reads.len()));
-        }
         for r in reads {
             let mut newr = r.clone();
             let tid = r.tid();
             let refname = str::from_utf8(header.target_names().get(tid as usize).r()?)?;
-            let exons = cigar2exons(&r.cigar(), r.pos() as i64)?;
-            for exon in &exons {
-                for replacement in tree.get(refname).r()?.find(exon.start..exon.start+1) {
+            let blocks = r.aligned_blocks();
+            for block in &blocks {
+                for replacement in tree.get(refname).r()?.find(block[0]..block[1]+1) {
                     newr.set_pos(0);
                     newr.set_mpos(0);
                     let cigar = Vec::from(r.cigar().iter().map(|c| c.clone()).collect::<Vec<Cigar>>());
@@ -273,7 +220,6 @@ fn main() -> Result<()> {
                         r.qual());
                 }
             }
-            outbam.write(&newr)?;
             outfastq.write(
                 str::from_utf8(newr.qname())?,
                 None,
@@ -284,17 +230,17 @@ fn main() -> Result<()> {
         Ok(())
     };
 
-    for r in bam.records() {
-        let r = r?;
-        if !reads.is_empty() && r.qname() != reads.get(0).r()?.qname() {
+    let mut reads = Vec::<bam::Record>::new();
+    let mut record = Record::new();
+    while bam.read(&mut record)? {
+        if !reads.is_empty() && record.qname() != reads.get(0).r()?.qname() {
             process_reads(&mut reads)?;
             reads.clear();
         }
-        reads.push(r);
+        reads.push(record.clone());
     }
     if !reads.is_empty() {
         process_reads(&mut reads)?;
     }
-    cmd!("samtools","sort","-@",num_cpus::get().to_string(),"-o",&options.outbamfile,&name_sorted_outbam).run()?;
     Ok(())
 }
