@@ -28,7 +28,7 @@ use num_cpus;
 use scopeguard::defer;
 use regex::Regex;
 use lazy_static::lazy_static;
-use lazy_regex::regex;
+use lazy_regex::{regex as re};
 
 use slog::info;
 use sloggers::Build;
@@ -130,7 +130,7 @@ fn main() -> Result<()> {
     &index_file)?;
 
     // collate the bam file by name
-    let collated_bamfile = f!(r#"{regex!(r"\.bam$").replace_all(&options.bamfile,"")}.collated.bam"#);
+    let collated_bamfile = f!(r#"{re!(r"\.bam$").replace_all(&options.bamfile,"")}.collated.bam"#);
     let cpus = num_cpus::get().to_string();
     if !Path::new(&collated_bamfile).exists() {
         let tmpid = rand::thread_rng().sample_iter(&Alphanumeric).take(10).collect::<String>();
@@ -248,14 +248,50 @@ fn main() -> Result<()> {
                 refpos = splice.start;
                 sequence.extend(replacement);
             }
+            tree.get_mut(chr).r()?.insert(splice.start..splice.stop, Replacement {
+                offset: pos-refpos,
+                replacement: &splice.replacement,
+            });
+            pos += splice.replacement.len() as i64;
+            refpos = splice.stop;
+            sequence.append(&mut splice.replacement.clone());
+        }
+        if refpos < reflen {
+            let replacement = &reference.get(chr).r()?[refpos as usize..reflen as usize];
+            tree.get_mut(chr).r()?.insert(refpos..reflen, Replacement {
+                offset: pos-refpos,
+                replacement,
+            });
+            sequence.extend(replacement);
+        }
+        outfasta.write(chr, None, &sequence)?;
+    }
+
+    for (chr, splices) in &mut splices {
+        tree.insert(String::from(chr), IntervalTree::new());
+        let mut pos = 0; // position in modified genome
+        let mut refpos = 0; // position in original genome
+        let mut sequence = Vec::<u8>::new(); // sequence of modified genome
+        let reflen = reference.get(chr).r()?.len() as i64; // reference length in original genome
+        for splice in splices.iter() {
+            if refpos < splice.start {
+                let replacement = &reference.get(chr).r()?[refpos as usize..splice.start as usize];
+                tree.get_mut(chr).r()?.insert(refpos..splice.start, Replacement {
+                    offset: pos-refpos,
+                    replacement,
+                });
+                pos += splice.start-refpos;
+                refpos = splice.start;
+                sequence.extend(replacement);
+            }
             if splice.stop-splice.start < splice.replacement.len() as i64 {
                 // we need to add reads to the new region
                 let fill_region_len = splice.replacement.len() as i64 - (splice.stop-splice.start);
                 let fill_region_pos = pos+(splice.replacement.len() as i64)-fill_region_len;
                 let fill_region_histo = vec![0u64; fill_region_len as usize];
                 let tid = header.tid(chr.as_bytes()).r()?;
-                let sample_region_beg = std::cmp::max(0, fill_region_pos-sample_distance) as u64;
-                let sample_region_end = std::cmp::min(reflen, fill_region_pos+sample_distance) as u64;
+                let sample_region_beg = std::cmp::max(0, refpos-sample_distance) as u64;
+                let sample_region_end = std::cmp::min(reflen, refpos+sample_distance) as u64;
                 let mut sample_region_histo = vec![0u32; (sample_region_end-sample_region_beg) as usize];
                 indexed_bam.fetch(tid, sample_region_beg, sample_region_end)?;
                 for pileup in indexed_bam.pileup() {
@@ -297,6 +333,14 @@ fn main() -> Result<()> {
                                 },
                                 None => (),
                             }
+                        }
+                        if let Some(longest_block) = longest_block {
+                            // determine the offset
+                            let pos = fr_i+fill_region_pos-((longest_block_size / 2)+longest_block[0]-blocks[0][0]);
+                            if 0 <= pos && pos < reflen {
+
+                            }
+                            // apply the cigar string to the offset to get the new sequence
                         }
                         // center the longest block on the current fill region index
                         // write the reads to the fastq file(s)
