@@ -34,6 +34,7 @@ use sloggers::terminal::{TerminalLoggerBuilder, Destination};
 use sloggers::types::Severity;
 
 use rand::Rng;
+use rand::seq::SliceRandom;
 use rand::distributions::Alphanumeric;
 use shell_words;
 use shell_words::quote;
@@ -317,8 +318,10 @@ fn main() -> Result<()> {
                     let fill_region_len = splice.replacement.len() as i64 - (splice.stop - splice.start);
                     let fill_region_pos = pos + (splice.replacement.len() as i64) - fill_region_len;
                     let mut fill_region_histo = vec![0u64; fill_region_len as usize];
+                    let mut fr_is = (0..fill_region_len).collect::<Vec<_>>();
+                    fr_is.shuffle(&mut rng);
                     'FILL_REGION:
-                    for fr_i in 0..fill_region_len {
+                    for fr_i in fr_is {
                         // find a random depth value from the sample region
                         let sr_i = rng.gen_range(0, sample_region_histo.len());
                         let sr_depth = sample_region_histo[sr_i];
