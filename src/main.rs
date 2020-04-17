@@ -90,9 +90,9 @@ struct Splice {
     replacement: Vec<u8>,
 }
 
-struct Replacement<'a> {
+struct Replacement {
     offset: i64,
-    replacement: &'a[u8],
+    replacement: Vec<u8>,
 }
 
 //437
@@ -194,6 +194,7 @@ fn main() -> Result<()> {
         } else {
             Some(bio::io::fastq::Writer::new(Box::new(io::BufWriter::new(std::fs::File::create(&options.outfastqfile2)?))))
         };
+
         let header = indexed_bam.header().clone();
         let sample_distance = 1000;
 
@@ -252,7 +253,7 @@ fn main() -> Result<()> {
                     let replacement = &reference.get(chr).r()?[refpos as usize..splice.start as usize];
                     tree.get_mut(chr).r()?.insert(refpos..splice.start, Replacement {
                         offset: pos - refpos,
-                        replacement,
+                        replacement: Vec::from(replacement),
                     });
                     pos += splice.start - refpos;
                     refpos = splice.start;
@@ -260,7 +261,7 @@ fn main() -> Result<()> {
                 }
                 tree.get_mut(chr).r()?.insert(splice.start..splice.stop, Replacement {
                     offset: pos - refpos,
-                    replacement: &splice.replacement,
+                    replacement: splice.replacement.clone(),
                 });
                 pos += splice.replacement.len() as i64;
                 refpos = splice.stop;
@@ -270,7 +271,7 @@ fn main() -> Result<()> {
                 let replacement = &reference.get(chr).r()?[refpos as usize..reflen as usize];
                 tree.get_mut(chr).r()?.insert(refpos..reflen, Replacement {
                     offset: pos - refpos,
-                    replacement,
+                    replacement: Vec::from(replacement),
                 });
                 sequence.extend(replacement);
             }
@@ -285,7 +286,6 @@ fn main() -> Result<()> {
             tree.insert(String::from(chr), IntervalTree::new());
             let mut pos = 0; // position in modified genome
             let mut refpos = 0; // position in original genome
-            let mut sequence = newref.get(chr).r()?; // modified genome sequence
             let reflen = reference.get(chr).r()?.len() as i64; // reference length in original genome
             for splice in splices.iter() {
                 if refpos < splice.start {
@@ -322,7 +322,6 @@ fn main() -> Result<()> {
                         // find a random depth value from the sample region
                         let sr_i = rng.gen_range(0, sample_region_histo.len());
                         let sr_depth = sample_region_histo[sr_i];
-                        let new_genomic_pos = fill_region_pos + fr_i;
                         // now fill the current fill_region base up to at least srh_depth
                         'FILL_REGION_HISTO:
                         while fill_region_histo[fr_i as usize] < sr_depth as u64 {
@@ -330,17 +329,17 @@ fn main() -> Result<()> {
                             if r1.is_none() && r2.is_none() { break 'FILL_REGION }
                             let reads = [&r1, &r2];
                             let blocks = reads.iter().map(
-                                |r| r.map(
-                                    |rr| rr.aligned_blocks())).collect::<Vec<Option<[i64; 2]>>>();
+                                |&r| r.as_ref().map(
+                                    |rr| rr.aligned_blocks())).collect::<Vec<Option<Vec<[i64; 2]>>>>();
                             // find the longest block
                             let mut longest_block_b = -1i64;
                             let mut longest_block_r = -1i64;
                             for (r, record) in reads.iter().enumerate() {
-                                if let Some(record) = record {
-                                    for (b, block) in blocks[r].r()?.iter().enumerate() {
+                                if let Some(_) = record {
+                                    for (b, block) in blocks[r].as_ref().r()?.iter().enumerate() {
                                         if longest_block_r >= 0 &&
                                             longest_block_b >= 0 &&
-                                            blocks[longest_block_r as usize].r()?[longest_block_b as usize][1] - blocks[longest_block_r as usize].r()?[longest_block_b as usize][0] < block[1] - block[0]
+                                            blocks[longest_block_r as usize].as_ref().r()?[longest_block_b as usize][1] - blocks[longest_block_r as usize].as_ref().r()?[longest_block_b as usize][0] < block[1] - block[0]
                                         {
                                             longest_block_b = b as i64;
                                             longest_block_r = r as i64;
@@ -349,7 +348,7 @@ fn main() -> Result<()> {
                                 }
                             }
                             if longest_block_r >= 0 && longest_block_b >= 0 {
-                                let longest_block = blocks[longest_block_r as usize].r()?[longest_block_b as usize];
+                                let longest_block = blocks[longest_block_r as usize].as_ref().r()?[longest_block_b as usize];
                                 let longest_block_len = longest_block[1] - longest_block[0];
                                 let fill_offset = (longest_block[0] + (longest_block_len / 2)) +
                                     (fill_region_len / 2);
@@ -357,9 +356,9 @@ fn main() -> Result<()> {
                                 // either read would go past the edge of genome space
                                 for (r, record) in [&r1, &r2].iter().enumerate() {
                                     if let Some(record) = record {
-                                        if blocks[r].r()?[0][0] - fill_offset + fill_region_pos < 0 ||
-                                            record.tid() != reads[longest_block_r].r()?.tid() ||
-                                            blocks[r].r()?.last()[1] - fill_offset + fill_region_pos > newref.get(str::from_utf8(header.target_names()[record.tid()])?).r()?.len()
+                                        if blocks[r].as_ref().r()?[0][0] - fill_offset + fill_region_pos < 0 ||
+                                            record.tid() != reads[longest_block_r as usize].as_ref().r()?.tid() ||
+                                            blocks[r].as_ref().r()?.last().r()?[1] - fill_offset + fill_region_pos > newref.get(str::from_utf8(header.target_names()[record.tid() as usize])?).r()?.len() as i64
                                         {
                                             record_buffer.push((r1, r2));
                                             continue 'FILL_REGION_HISTO
@@ -368,16 +367,14 @@ fn main() -> Result<()> {
                                 }
                                 for (r, record) in [&r1, &r2].iter_mut().enumerate() {
                                     if let Some(record) = record {
-                                        for (b, block) in blocks.iter().enumerate() {
-                                            if let Some(block) = block {
-                                                let fill_start = block[0] - fill_offset;
-                                                let fill_end = block[1] - fill_offset;
-                                                // fill in the fillin_region_histo with the blocks
-                                                for i in std::cmp::max(0, fill_start)..
-                                                    std::cmp::min(fill_region_len, fill_end)
-                                                {
-                                                    fill_region_histo[i as usize] += 1
-                                                }
+                                        for block in blocks[r].as_ref().r()?.iter() {
+                                            let fill_start = block[0] - fill_offset;
+                                            let fill_end = block[1] - fill_offset;
+                                            // fill in the fillin_region_histo with the blocks
+                                            for i in std::cmp::max(0, fill_start)..
+                                                std::cmp::min(fill_region_len, fill_end)
+                                            {
+                                                fill_region_histo[i as usize] += 1
                                             }
                                         }
                                         let chr = str::from_utf8(header.target_names().get(
@@ -391,7 +388,7 @@ fn main() -> Result<()> {
                                             let newrpos = rpos - fill_offset + fill_region_pos;
                                             seq[qpos as usize] = refseq[newrpos as usize];
                                         }
-                                        let out = if r == 0 { &mut outfastq } else { &mut outfastq2.r()? };
+                                        let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut().r()? };
                                         out.write(
                                             str::from_utf8(record.qname())?,
                                             None,
@@ -435,7 +432,7 @@ fn main() -> Result<()> {
                                 seq[qpos as usize] = refseq[newrpos as usize];
                             }
                         }
-                        let out = if r == 0 { &mut outfastq } else { &mut outfastq2.r()? };
+                        let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut().r()? };
                         out.write(
                             str::from_utf8(record.qname())?,
                             None,
@@ -452,16 +449,17 @@ fn main() -> Result<()> {
     // sort the fastq files by read name
     info!(log, "Sorting the FASTQ files by read name");
     let tmp1 = f!("{options.outfastqfile}.{tmpid}.tmp");
-    let fastq_sort = vec!["bash","-c",
-        f!(r#"<{quote(options.outfastqfile)} paste - - - - | sort -k1,1 | tr "\t" "\n" >{quote(tmp1)} && mv -v {quote(tmp1)} {quote(options.outfastqfile)}"#)];
-    info!(log, "Running command: {}", shell_words::join(&fastq_sort));
-    cmd(fastq_sort[0],&fastq_sort[1..]).run()?;
+
+    let fastq_sort = f!(r#"shopt -s nocasematch; f={quote(&options.outfastqfile)}; if [[ ${{f##*.}} = gz ]]; then gzip -cd "$f"; else cat "$f"; fi | paste - - - - | sort -k1,1 | tr "\t" "\n" |if [[ ${{f##*.}} = gz ]]; then gzip; else cat; fi >{quote(&tmp1)} && mv -v {quote(&tmp1)} {quote(&options.outfastqfile)}"#);
+    let fastq_sort_cmd = ["bash","-c",&fastq_sort];
+    info!(log, "Running command: {}", shell_words::join(&fastq_sort_cmd));
+    cmd(fastq_sort_cmd[0],&fastq_sort_cmd[1..]).run()?;
     if !options.outfastqfile2.is_empty() {
         let tmp2 = f!("{options.outfastqfile2}.{tmpid}.tmp");
-        let fastq_sort = vec!["bash","-c",
-            f!(r#"<{quote(options.outfastqfile2)} paste - - - - | sort -k1,1 | tr "\t" "\n" >{quote(tmp2)} && mv -v {quote(tmp2)} {quote(options.outfastqfile2)}"#)];
-        info!(log, "Running command: {}", shell_words::join(&fastq_sort));
-        cmd(fastq_sort[0],&fastq_sort[1..]).run()?;
+        let fastq_sort = f!(r#"shopt -s nocasematch; f={quote(&options.outfastqfile2)}; if [[ ${{f##*.}} = gz ]]; then gzip -cd "$f"; else cat "$f"; fi | paste - - - - | sort -k1,1 | tr "\t" "\n" |if [[ ${{f##*.}} = gz ]]; then gzip; else cat; fi >{quote(&tmp2)} && mv -v {quote(&tmp2)} {quote(&options.outfastqfile2)}"#);
+        let fastq_sort_cmd = ["bash","-c",&fastq_sort];
+        info!(log, "Running command: {}", shell_words::join(&fastq_sort_cmd));
+        cmd(fastq_sort_cmd[0],&fastq_sort_cmd[1..]).run()?;
     }
     Ok(())
 }
