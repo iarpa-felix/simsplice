@@ -9,6 +9,7 @@ use std::io::Write;
 use std::io;
 
 use rust_htslib::bam::record::Record;
+use rust_htslib::bam::record::Cigar;
 use rust_htslib::{bam, bam::Read as BamRead};
 use rust_htslib::{bcf, bcf::Read as BcfRead};
 use rust_htslib::bam::ext::BamRecordExtensions;
@@ -38,6 +39,7 @@ use rand::seq::SliceRandom;
 use rand::distributions::Alphanumeric;
 use shell_words;
 use shell_words::quote;
+use maplit::hashset;
 
 // INPUTS: reference fasta file, input vcf file, input bam file
 // OUTPUTS: modified reference fasta file, fastq file with modified reads
@@ -57,6 +59,11 @@ use shell_words::quote;
 //   a. read is moved due to previous splice(s)
 //   b. read is moved to fill in start site histogram for insertion
 
+// example data:
+//   /data/iarpa/analysis/SRR11140744
+//   /data/iarpa/TE/437/{assembly,illumina}
+
+
 pub type Result<T, E = anyhow::Error> = core::result::Result<T, E>;
 trait ToResult<T> {
     fn r(self) -> Result<T>;
@@ -68,19 +75,19 @@ impl<T> ToResult<T> for Option<T> {
 }
 
 #[derive(StructOpt, Debug)]
-#[structopt(name = "bam2bedgraph", about = "Convert bam files to bedgraph/bigWig format")]
+#[structopt(name = "simsplice", about = "Apply simulated modifications to a reference genome and a set of aligned reads")]
 struct Options {
-    #[structopt(help = "Input reference FASTA file", name="FASTAFILE")]
+    #[structopt(long="genome", help = "Input reference genome FASTA file", name="FASTAFILE")]
     reference: String,
-    #[structopt(help = "Input VCF file", name="VCFFILE")]
+    #[structopt(long="vcf", help = "Input VCF file with mutations", name="VCFFILE")]
     vcffile: String,
-    #[structopt(help = "Input BAM file", name="BAMFILE")]
+    #[structopt(long="bam", help = "Input BAM file of reads, *INCLUDING* unaligned reads", name="BAMFILE")]
     bamfile: String,
-    #[structopt(long = "outfasta", help = "Output reference FASTA file", name="OUTFASTAFILE")]
+    #[structopt(long = "outgenome", help = "Output modified reference FASTA file", name="OUTFASTAFILE")]
     outfastafile: String,
-    #[structopt(long = "outfastq", help = "Output FASTQ file", name="OUTFASTQFILE")]
+    #[structopt(long = "outreads", help = "Output modified FASTQ reads file", name="OUTFASTQFILE")]
     outfastqfile: String,
-    #[structopt(long = "outfastq2", help = "Output FASTQ file, read 2", name="OUTFASTQFILE2", default_value="")]
+    #[structopt(long = "outreads2", help = "Output modified FASTQ reads file 2, for paired-end reads", name="OUTFASTQFILE2", default_value="")]
     outfastqfile2: String,
 }
 
@@ -95,8 +102,6 @@ struct Replacement {
     offset: i64,
     replacement: Vec<u8>,
 }
-
-//437
 
 fn main() -> Result<()> {
     std::env::set_var("RUST_BACKTRACE", "full");
@@ -161,8 +166,7 @@ fn main() -> Result<()> {
         if r.allele_count() > 0 {
             let rid = r.rid().r()?;
             let refname = str::from_utf8(r.header().rid2name(rid)?)?;
-            // TODO: Is API 1-based or 0-based?
-            let pos = r.pos();
+            let pos = r.pos(); // 0-based
             let alleles = r.alleles();
             let ref_allele = alleles.get(0).r()?;
             for allele in &alleles[1..] {
@@ -306,7 +310,6 @@ fn main() -> Result<()> {
                     indexed_bam.fetch(tid, sample_region_beg, sample_region_end)?;
                     for pileup in indexed_bam.pileup() {
                         let pileup = pileup?;
-                        // TODO: Is API 1-based or 0-based?
                         let sr_pos = pileup.pos() - sample_region_beg as u32;
                         if 0 <= sr_pos && (sr_pos as usize) < sample_region_histo.len()
                         {
@@ -382,14 +385,28 @@ fn main() -> Result<()> {
                                         }
                                         let chr = str::from_utf8(header.target_names().get(
                                             record.tid() as usize).r()?)?;
+                                        let oldrefseq = reference.get(chr).r()?;
                                         let refseq = newref.get(chr).r()?;
                                         let ap = record.aligned_pairs();
+                                        let oldseq = record.seq().encoded;
                                         let mut seq = Vec::from(record.seq().encoded);
                                         for a in &ap {
                                             let qpos = a[0];
                                             let rpos = a[1];
                                             let newrpos = rpos - fill_offset + fill_region_pos;
-                                            seq[qpos as usize] = refseq[newrpos as usize];
+                                            if oldseq[qpos as usize].to_ascii_uppercase() == oldrefseq[rpos as usize].to_ascii_uppercase() {
+                                                seq[qpos as usize] = refseq[newrpos as usize];
+                                            }
+                                            else if oldseq[qpos as usize].to_ascii_uppercase() == refseq[newrpos as usize].to_ascii_uppercase() {
+                                                let nucs = [b'A', b'C', b'G', b'T'].iter().filter(|n| **n != refseq[newrpos as usize].to_ascii_uppercase()).collect::<Vec<_>>();
+                                                let randnuc = rng.gen_range(0, 3);
+                                                seq[qpos as usize] = *nucs[randnuc];
+                                            }
+                                            seq[qpos as usize] = if oldseq[qpos as usize].is_ascii_uppercase()
+                                                { seq[qpos as usize].to_ascii_uppercase() }
+                                            else if oldseq[qpos as usize].is_ascii_lowercase()
+                                                { seq[qpos as usize].to_ascii_lowercase() }
+                                            else { seq[qpos as usize] };
                                         }
                                         let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut().r()? };
                                         out.write(
@@ -422,17 +439,32 @@ fn main() -> Result<()> {
                 if let Some(record) = record {
                     let fprime = if record.is_reverse() { record.reference_end() } else { record.pos() };
                     let refname = str::from_utf8(header.target_names().get(record.tid() as usize).r()?)?;
+                    let oldrefseq = reference.get(refname).r()?;
                     let refseq = newref.get(refname).r()?;
                     for entry in tree.get(refname).r()?.find(fprime..fprime + 1) {
                         let replacement = entry.data();
                         let ap = record.aligned_pairs();
+                        let oldseq = record.seq().encoded;
                         let mut seq = Vec::from(record.seq().encoded);
                         for a in &ap {
                             let qpos = a[0];
                             let rpos = a[1];
                             let newrpos = rpos + replacement.offset;
                             if 0 <= newrpos && newrpos < refseq.len() as i64 {
-                                seq[qpos as usize] = refseq[newrpos as usize];
+                                if oldseq[qpos as usize].to_ascii_uppercase() == oldrefseq[rpos as usize].to_ascii_uppercase()
+                                {
+                                    seq[qpos as usize] = refseq[newrpos as usize];
+                                }
+                                else if oldseq[qpos as usize].to_ascii_uppercase() == refseq[newrpos as usize].to_ascii_uppercase() {
+                                    let nucs = [b'A', b'C', b'G', b'T'].iter().filter(|n| **n != refseq[newrpos as usize].to_ascii_uppercase()).collect::<Vec<_>>();
+                                    let randnuc = rng.gen_range(0, 3);
+                                    seq[qpos as usize] = *nucs[randnuc];
+                                }
+                                seq[qpos as usize] = if oldseq[qpos as usize].is_ascii_uppercase()
+                                { seq[qpos as usize].to_ascii_uppercase() }
+                                else if oldseq[qpos as usize].is_ascii_lowercase()
+                                { seq[qpos as usize].to_ascii_lowercase() }
+                                else { seq[qpos as usize] };
                             }
                         }
                         let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut().r()? };
