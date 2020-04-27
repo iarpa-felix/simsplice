@@ -23,3 +23,12 @@ rand = "*"
 shell-words = "*"
 flate2 = "*"
 maplit = "*"
+linked-hash-map = "*"
+
+[[bin]]
+name = "simsplice"
+path = "src/simsplice.rs"
+
+[[bin]]
+name = "genvcf"
+path = "src/genvcf.rs"
