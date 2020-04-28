@@ -93,12 +93,13 @@ struct Options {
 struct Splice {
     start: i64,
     stop: i64,
-    replacement: Vec<u8>,
+    replacement: String,
 }
 
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone)]
 struct Replacement {
     offset: i64,
-    replacement: Vec<u8>,
+    replacement: String,
 }
 
 fn main() -> Result<()> {
@@ -116,6 +117,7 @@ fn main() -> Result<()> {
     let tmpid = rng.sample_iter(&Alphanumeric).take(10).collect::<String>();
 
     // read in the reference FASTA file
+    info!(log, "Reading in FASTA assembly file {}", &options.reference);
     let mut reference = BTreeMap::<String,Vec<u8>>::new();
     let fasta = fasta::Reader::from_file(&options.reference)?;
     for r in fasta.records() {
@@ -126,10 +128,12 @@ fn main() -> Result<()> {
     // make a bam index file if it does not exist
     let index_file = f!("{options.bamfile}.bai");
     if !Path::new(&index_file).exists() {
+        info!(log, "Creating index on bam file {}", &options.bamfile);
         let index_cmd = [ "samtools", "index", &options.bamfile ];
         info!(log, "Running command: {}", shell_words::join(&index_cmd));
         cmd(index_cmd[0],&index_cmd[1..]).run()?;
     }
+    info!(log, "Loading indexed bam file {}", &options.bamfile);
     let mut indexed_bam = bam::IndexedReader::from_path_and_index(
         &options.bamfile,
     &index_file)?;
@@ -145,6 +149,7 @@ fn main() -> Result<()> {
             "-o",&tmpfile,
             &options.bamfile,
         ];
+        info!(log, "Collaing bam file {} to {}", &options.bamfile, &collated_bamfile);
         info!(log, "Running command: {}", shell_words::join(&collate_cmd));
         cmd(collate_cmd[0],&collate_cmd[1..]).run()?;
         info!(log, "Moving {} to {}", &tmpfile, &collated_bamfile);
@@ -154,10 +159,11 @@ fn main() -> Result<()> {
 
     // get the list of splice positions from the VCF file
     let mut splices = BTreeMap::<String,BTreeSet<Splice>>::new();
+    info!(log, "Reading VCF file {}", &options.vcffile);
     let mut vcf = bcf::Reader::from_path(&options.vcffile)?;
     for r in vcf.records() {
-        info!(log, "Processing VCF record: {:?}", &options.vcffile);
         let r = r?;
+        info!(log, "Processing VCF record: {:?}", &r);
         if r.allele_count() > 2 {
             Err(anyhow!("Can't handle multiple alleles in VCF file: {:?}", r))?;
         }
@@ -174,7 +180,7 @@ fn main() -> Result<()> {
                 let splice = Splice{
                     start: pos,
                     stop: pos+ref_allele.len() as i64,
-                    replacement: Vec::from(*allele),
+                    replacement: String::from(str::from_utf8(allele)?),
                 };
                 info!(log, "Storing splice: {:?}", splice);
                 splices.get_mut(refname).r()?.insert(splice);
@@ -183,13 +189,17 @@ fn main() -> Result<()> {
     }
 
     {
+        info!(log, "Writing output FASTA: {}", &options.outfastafile);
         let mut outfasta = bio::io::fasta::Writer::to_file(&options.outfastafile)?;
+
+        info!(log, "Writing output FASTQ1: {}", &options.outfastqfile);
         let mut outfastq: bio::io::fastq::Writer<Box<dyn Write>> = if options.outfastqfile.ends_with(".gz") {
             bio::io::fastq::Writer::new(Box::new(GzEncoder::new(std::fs::File::create(&options.outfastqfile)?, Compression::default())))
         } else {
             bio::io::fastq::Writer::new(Box::new(io::BufWriter::new(std::fs::File::create(&options.outfastqfile)?)))
         };
 
+        info!(log, "Writing output FASTQ2: {}", &options.outfastqfile2);
         let mut outfastq2: Option<fastq::Writer<Box<dyn Write>>> = if options.outfastqfile2.is_empty() {
             None
         } else if options.outfastqfile2.ends_with(".gz") {
@@ -252,32 +262,45 @@ fn main() -> Result<()> {
             let mut sequence = Vec::<u8>::new(); // sequence of modified genome
             let reflen = reference.get(chr).r()?.len() as i64; // reference length in original genome
             for splice in splices.iter() {
+                info!(log, "Processing splice: {:?}", &splice);
                 if refpos < splice.start {
-                    let replacement = &reference.get(chr).r()?[refpos as usize..splice.start as usize];
-                    tree.get_mut(chr).r()?.insert(refpos..splice.start, Replacement {
+                    let replacement_seq = &reference.get(chr).r()?[refpos as usize..splice.start as usize];
+                    let replacement = Replacement {
                         offset: pos - refpos,
-                        replacement: Vec::from(replacement),
-                    });
+                        replacement: String::from(str::from_utf8(replacement_seq)?),
+                    };
+                    info!(log, "Pre-Replacement: {:?}", &replacement);
+                    tree.get_mut(chr).r()?.insert(refpos..splice.start, replacement);
                     pos += splice.start - refpos;
                     refpos = splice.start;
-                    sequence.extend(replacement);
+                    info!(log, "pos={}, refpos={}", pos, refpos);
+                    sequence.extend(replacement_seq);
+                    info!(log, "sequence.len()={}", sequence.len());
                 }
-                tree.get_mut(chr).r()?.insert(splice.start..splice.stop, Replacement {
+                let replacement = Replacement {
                     offset: pos - refpos,
                     replacement: splice.replacement.clone(),
-                });
+                };
+                info!(log, "Replacement: {:?}", &replacement);
+                tree.get_mut(chr).r()?.insert(splice.start..splice.stop, replacement);
                 pos += splice.replacement.len() as i64;
                 refpos = splice.stop;
-                sequence.append(&mut splice.replacement.clone());
+                info!(log, "pos={}, refpos={}", pos, refpos);
+                sequence.extend(&mut splice.replacement.as_str().as_bytes().iter());
+                info!(log, "sequence.len()={}", sequence.len());
             }
             if refpos < reflen {
-                let replacement = &reference.get(chr).r()?[refpos as usize..reflen as usize];
-                tree.get_mut(chr).r()?.insert(refpos..reflen, Replacement {
+                let replacement_seq = &reference.get(chr).r()?[refpos as usize..reflen as usize];
+                let replacement = Replacement {
                     offset: pos - refpos,
-                    replacement: Vec::from(replacement),
-                });
-                sequence.extend(replacement);
+                    replacement: String::from(str::from_utf8(replacement_seq)?),
+                };
+                info!(log, "Post-Replacement: {:?}", &replacement);
+                tree.get_mut(chr).r()?.insert(refpos..reflen, replacement);
+                sequence.extend(replacement_seq);
+                info!(log, "sequence.len()={}", sequence.len());
             }
+            info!(log, "Writing chr {}, {} bases", chr, sequence.len());
             outfasta.write(chr, None, &sequence)?;
             newref.insert(chr.clone(), sequence);
         }
