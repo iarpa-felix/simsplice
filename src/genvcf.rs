@@ -48,23 +48,23 @@ impl Distribution<u8> for Nucleotide {
 #[derive(StructOpt, Debug)]
 #[structopt(name = "simsplice", about = "Apply simulated modifications to a reference genome and a set of aligned reads")]
 struct Options {
-    #[structopt(long="genome", help = "Input reference genome FASTA file", name="FASTAFILE")]
+    #[structopt(short="r", long="genome", help = "Input reference genome FASTA file", name="FASTAFILE")]
     reference: String,
-    #[structopt(long="vcf", help = "Output VCF file with mutations", name="VCFFILE")]
+    #[structopt(short="v", long="vcf", help = "Output VCF file with mutations", name="VCFFILE")]
     vcffile: String,
-    #[structopt(long="prob-insert", help = "Probability of an insertion event (0.0-1.0)", name="PROB", default_value="0.3")]
+    #[structopt(short="i", long="prob-insert", help = "Probability of an insertion event (0.0-1.0)", name="PROB", default_value="0.3")]
     prob_insert: f64,
-    #[structopt(long="prob-delete", help = "Probability of a deletion event (0.0-1.0)", name="PROB", default_value="0.3")]
+    #[structopt(short="d", long="prob-delete", help = "Probability of a deletion event (0.0-1.0)", name="PROB", default_value="0.3")]
     prob_delete: f64,
-    #[structopt(long="prob-splice", help = "Probability of a splicing event (0.0-1.0)", name="PROB", default_value="0.3")]
+    #[structopt(short="s", long="prob-splice", help = "Probability of a splicing event (0.0-1.0)", name="PROB", default_value="0.3")]
     prob_splice: f64,
-    #[structopt(long="delete-range", help = "Range in bp for deletions", name="BP", default_value="200-1000")]
+    #[structopt(short="D", long="delete-range", help = "Range in bp for deletions", name="BP", default_value="200-1000")]
     delete_range: String,
-    #[structopt(long="insert-range", help = "Range in bp for insertions", name="BP", default_value="200-1000")]
+    #[structopt(short="I", long="insert-range", help = "Range in bp for insertions", name="BP", default_value="200-1000")]
     insert_range: String,
-    #[structopt(long="num-modifications", help = "The number of modification to make", name="NUM")]
+    #[structopt(short="n", long="num-modifications", help = "The number of modification to make", name="NUM")]
     num_modifications: Option<u64>,
-    #[structopt(long="modifications", help = "Specify modifications. A series of chromosome choordinate/ranges:lengths. Examples: chr1:10000, chr1:1000-2000, chr1:1000-2000:400", name="MODIFICATOINS", default_value="1")]
+    #[structopt(short="m", long="modifications", help = "Specify modifications. A series of chromosome choordinate/ranges:lengths. Examples: chr1:10000, chr1:1000-2000, chr1:1000-2000:400", name="MODIFICATOINS", default_value="1")]
     modifications: Vec<String>,
 }
 

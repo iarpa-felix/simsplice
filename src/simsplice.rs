@@ -75,17 +75,17 @@ impl<T> ToResult<T> for Option<T> {
 #[derive(StructOpt, Debug)]
 #[structopt(name = "simsplice", about = "Apply simulated modifications to a reference genome and a set of aligned reads")]
 struct Options {
-    #[structopt(long="genome", help = "Input reference genome FASTA file", name="FASTAFILE")]
+    #[structopt(short="g", long="genome", help = "Input reference genome FASTA file", name="FASTAFILE")]
     reference: String,
-    #[structopt(long="vcf", help = "Input VCF file with mutations", name="VCFFILE")]
+    #[structopt(short="v", long="vcf", help = "Input VCF file with mutations", name="VCFFILE")]
     vcffile: String,
-    #[structopt(long="bam", help = "Input BAM file of reads, *INCLUDING* unaligned reads", name="BAMFILE")]
+    #[structopt(short="b", long="bam", help = "Input BAM file of reads, *INCLUDING* unaligned reads", name="BAMFILE")]
     bamfile: String,
-    #[structopt(long = "outgenome", help = "Output modified reference FASTA file", name="OUTFASTAFILE")]
+    #[structopt(short="o", long = "outgenome", help = "Output modified reference FASTA file", name="OUTFASTAFILE")]
     outfastafile: String,
-    #[structopt(long = "outreads", help = "Output modified FASTQ reads file", name="OUTFASTQFILE")]
+    #[structopt(short="r", long = "outreads", help = "Output modified FASTQ reads file", name="OUTFASTQFILE")]
     outfastqfile: String,
-    #[structopt(long = "outreads2", help = "Output modified FASTQ reads file 2, for paired-end reads", name="OUTFASTQFILE2", default_value="")]
+    #[structopt(short="R", long = "outreads2", help = "Output modified FASTQ reads file 2, for paired-end reads", name="OUTFASTQFILE2", default_value="")]
     outfastqfile2: String,
 }
 
