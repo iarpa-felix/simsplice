@@ -74,7 +74,7 @@ struct Splice {
     chr: String,
     start: i64,
     end: i64,
-    replacement: Vec<u8>,
+    replacement: String,
 }
 
 #[derive(Debug, PartialEq)]
@@ -157,7 +157,7 @@ fn main() -> Result<()> {
                         else if let Some(end)=end {end}
                     else if let Some(start)=start {start+delete_range.start}
                     else {delete_range.start};
-                    reference[n.as_str()].len() as i64 <= min_len
+                    min_len <= reference[n.as_str()].len() as i64
                 }).map(|c| c.as_str()).collect::<Vec<_>>();
                 if chrs.is_empty() {
                     Err(anyhow!("Could not create modification: {}: No suitable refseqs found", m))?;
@@ -196,7 +196,7 @@ fn main() -> Result<()> {
                     chr: chr.to_string(),
                     start,
                     end,
-                    replacement: replace,
+                    replacement: String::from(str::from_utf8(&replace)?),
                 })
             }).collect::<Result<Vec<Splice>>>()?;
         splices.extend(splice);
@@ -209,7 +209,7 @@ fn main() -> Result<()> {
         header.push_record(header_line.as_bytes());
     }
     info!(log, "Writing VCF file: {}", &options.vcffile);
-    let mut vcf = bcf::Writer::from_path(&options.vcffile, &header, false, Format::VCF)?;
+    let mut vcf = bcf::Writer::from_path(&options.vcffile, &header, true, Format::VCF)?;
     let mut lastsplice: Option<&Splice> = None;
     for splice in &splices {
         info!(log, "Writing record for splice: {:?}", splice);
@@ -227,10 +227,10 @@ fn main() -> Result<()> {
         if splice.start == 0 {
             let alleles = [
                 &reference[&splice.chr][splice.start as usize..std::cmp::min(reference[&splice.chr].len() as i64, splice.end+1) as usize],
-                &[splice.replacement.to_vec(),
+                &[splice.replacement.as_bytes().to_vec(),
                     reference[&splice.chr][splice.end as usize..std::cmp::min(reference[&splice.chr].len() as i64, splice.end as i64) as usize].to_vec()].concat(),
             ];
-            info!(log, "start=0, writing pos={}, alleles={:?}", splice.start, &alleles);
+            info!(log, "start=0, writing pos={}, alleles={:?}", splice.start, &alleles.iter().map(|a| Ok(String::from(str::from_utf8(a)?)) ).collect::<Result<Vec<_>>>()?);
             record.set_pos(splice.start);
             record.set_alleles(&alleles)?;
         }
@@ -238,9 +238,9 @@ fn main() -> Result<()> {
             let alleles = [
                 &reference[&splice.chr][(splice.start-1) as usize..splice.end as usize],
                 &[reference[&splice.chr][(splice.start-1) as usize..splice.start as usize].to_vec(),
-                    splice.replacement.to_vec()].concat(),
+                    splice.replacement.as_bytes().to_vec()].concat(),
             ];
-            info!(log, "start={}, writing pos={}, alleles={:?}", splice.start, splice.start-1, &alleles);
+            info!(log, "start={}, writing pos={}, alleles={:?}", splice.start, splice.start-1, &alleles.iter().map(|a| Ok(String::from(str::from_utf8(a)?)) ).collect::<Result<Vec<_>>>()?);
             record.set_pos(splice.start-1);
             record.set_alleles(&alleles)?;
         }
