@@ -1,12 +1,9 @@
 use structopt::StructOpt;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use linked_hash_map::LinkedHashMap;
-use bio::data_structures::interval_tree::IntervalTree;
 use anyhow::anyhow;
 use bio::io::fasta;
-use duct::cmd;
-use interpol::{format as f};
-use regex::{Regex, Captures, Match};
+use regex::{Regex, Captures};
 use lazy_static::lazy_static;
 use lazy_regex::{regex as re};
 
@@ -17,10 +14,8 @@ use sloggers::types::Severity;
 
 use rand::Rng;
 use rand::seq::SliceRandom;
-use shell_words;
-use shell_words::quote;
 use std::ops::Range;
-use rand::distributions::{Alphanumeric, Distribution};
+use rand::distributions::Distribution;
 use rust_htslib::bcf;
 use rust_htslib::bcf::Format;
 
@@ -81,6 +76,13 @@ struct Splice {
     replacement: Vec<u8>,
 }
 
+#[derive(Debug, PartialEq)]
+enum ModType {
+    Insert,
+    Delete,
+    Splice
+}
+
 fn main() -> Result<()> {
     std::env::set_var("RUST_BACKTRACE", "full");
     std::env::set_var("RUST_LIB_BACKTRACE", "1");
@@ -108,9 +110,6 @@ fn main() -> Result<()> {
     if total_prob == 0.0 {
         Err(anyhow!("prob-insert, prob-delete and prob-splice sum to zero!"))?;
     }
-    let prob_insert = options.prob_insert / total_prob;
-    let prob_delete = options.prob_delete / total_prob;
-    let prob_splice = options.prob_splice / total_prob;
 
     let delete_range: Vec<Range<i64>> = re!(r"^([0-9]+)(-|\.\.)([0-9]+)$").captures(&options.delete_range).
         iter().map(|c| Ok((c[1].parse::<i64>()?)..(c[3].parse::<i64>()?))).collect::<Result<Vec<_>>>()?;
@@ -126,19 +125,25 @@ fn main() -> Result<()> {
     if options.num_modifications.is_some() && !options.modifications.is_empty() {
         Err(anyhow!("Specifying both num-modifications and modifications is disallowed"))?;
     }
-    let modifications = (0..options.num_modifications.unwrap_or(0)).map(|nm| "".to_string()).collect::<Vec<_>>();
+    let modifications = (0..options.num_modifications.unwrap_or(0)).map(|_| "".to_string()).collect::<Vec<_>>();
     let mut splices = BTreeSet::<Splice>::new();
     for m in if modifications.is_empty() {&options.modifications} else {&modifications} {
-        let mut splice = re!(r"(?x)
+        let splice = re!(r"(?xi)
             ^(?P<chr>[^:]+)?
             (:((?P<start>[0-9]+)(([.][.]|-)(?P<end>[0-9]+))?)?
-            (:(?P<replace>[0-9]+|[ACGTNacgtn]+)?)?)?$
+            (:(?P<replace>[0-9]+|[ACGTN]+)?)?)?$
             ").captures(m).iter().map(|c: &Captures|
             {
                 let chr = c.name("chr").map(|c| c.as_str());
                 let start = c.name("start").map(|s| s.as_str().parse::<i64>()).transpose()?;
                 let end = c.name("end").map(|e| e.as_str().parse::<i64>()).transpose()?;
                 let replace = c.name("replace").map(|r| r.as_str());
+
+                let mod_type = [
+                    (&ModType::Insert, &options.prob_insert),
+                    (&ModType::Delete, &options.prob_delete),
+                    (&ModType::Splice, &options.prob_splice),
+                ].choose_weighted(&mut rng, |t| t.1)?.0;
 
                 let chrs = reference.keys().filter(|n| {
                     let min_len = if let (Some(start), Some(end)) = (start, end) {end-start}
@@ -159,16 +164,20 @@ fn main() -> Result<()> {
                     None => rng.gen_range(0, reference[chr].len() as i64 - delete_range.start),
                 };
                 let end = match end {
-                    Some(start) => start,
-                    None => rng.gen_range(start+delete_range.start, reference[chr].len() as i64),
+                    Some(end) => end,
+                    None => if *mod_type == ModType::Insert { start }
+                    else {
+                        rng.gen_range(start+delete_range.start, reference[chr].len() as i64)
+                    },
                 };
                 let replace = match replace {
                     Some(replace) => match replace.parse::<usize>() {
                         Ok(num_replace) => rng.sample_iter(&Nucleotide).take(num_replace).collect::<Vec<u8>>(),
                         Err(_) => replace.as_bytes().to_vec(),
                     }
-                    None => {
-                        let num_replace = rng.gen_range(start+delete_range.start, reference[chr].len() as i64);
+                    None => if *mod_type == ModType::Delete { vec![] }
+                    else {
+                        let num_replace = rng.gen_range(insert_range.start, insert_range.end);
                         rng.sample_iter(&Nucleotide).take(num_replace as usize).collect::<Vec<u8>>()
                     },
                 };
@@ -179,9 +188,7 @@ fn main() -> Result<()> {
                     replacement: replace,
                 })
             }).collect::<Result<Vec<Splice>>>()?;
-        for splice in splice {
-            splices.insert(splice);
-        }
+        splices.extend(splice);
     }
 
     let mut header = bcf::header::Header::new();
@@ -189,14 +196,14 @@ fn main() -> Result<()> {
         header.push_record(format!("##contig=<ID={},length={}>", name, seq.len()).as_bytes());
     }
     let mut vcf = bcf::Writer::from_path(&options.vcffile, &header, false, Format::VCF)?;
-    let mut lastsplice: Option<Splice> = None;
+    let mut lastsplice: Option<&Splice> = None;
     for splice in &splices {
         if let Some(lastsplice) = &lastsplice {
             if lastsplice.chr == splice.chr && splice.start < lastsplice.end {
                 Err(anyhow!("Overlapping modifications found, cannot continue: {:?}: {:?}", &splice, &lastsplice))?;
             }
         }
-        lastsplice = Some(splice.clone());
+        lastsplice = Some(&splice);
 
         let mut record = vcf.empty_record();
         record.set_rid(Some(refids[splice.chr.as_str()] as u32));

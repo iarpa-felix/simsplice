@@ -9,7 +9,6 @@ use std::io::Write;
 use std::io;
 
 use rust_htslib::bam::record::Record;
-use rust_htslib::bam::record::Cigar;
 use rust_htslib::{bam, bam::Read as BamRead};
 use rust_htslib::{bcf, bcf::Read as BcfRead};
 use rust_htslib::bam::ext::BamRecordExtensions;
@@ -39,7 +38,6 @@ use rand::seq::SliceRandom;
 use rand::distributions::Alphanumeric;
 use shell_words;
 use shell_words::quote;
-use maplit::hashset;
 
 // INPUTS: reference fasta file, input vcf file, input bam file
 // OUTPUTS: modified reference fasta file, fastq file with modified reads
