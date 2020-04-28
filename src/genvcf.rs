@@ -53,15 +53,15 @@ struct Options {
     reference: String,
     #[structopt(short="v", long="vcf", help = "Output VCF file with mutations", name="VCFFILE")]
     vcffile: String,
-    #[structopt(short="i", long="prob-insert", help = "Probability of an insertion event (0.0-1.0)", name="PROB", default_value="0.3")]
+    #[structopt(short="i", long="prob-insert", help = "Probability of an insertion event (0.0-1.0)", name="PROB_INSERT", default_value="0.3")]
     prob_insert: f64,
-    #[structopt(short="d", long="prob-delete", help = "Probability of a deletion event (0.0-1.0)", name="PROB", default_value="0.3")]
+    #[structopt(short="d", long="prob-delete", help = "Probability of a deletion event (0.0-1.0)", name="PROB_DELETE", default_value="0.3")]
     prob_delete: f64,
-    #[structopt(short="s", long="prob-splice", help = "Probability of a splicing event (0.0-1.0)", name="PROB", default_value="0.3")]
+    #[structopt(short="s", long="prob-splice", help = "Probability of a splicing event (0.0-1.0)", name="PROB_SPLICE", default_value="0.3")]
     prob_splice: f64,
-    #[structopt(short="D", long="delete-range", help = "Range in bp for deletions", name="BP", default_value="200-1000")]
+    #[structopt(short="D", long="delete-range", help = "Range in bp for deletions", name="DELETE_RANGE", default_value="200-1000")]
     delete_range: String,
-    #[structopt(short="I", long="insert-range", help = "Range in bp for insertions", name="BP", default_value="200-1000")]
+    #[structopt(short="I", long="insert-range", help = "Range in bp for insertions", name="INSERT_RANGE", default_value="200-1000")]
     insert_range: String,
     #[structopt(short="n", long="num-modifications", help = "The number of modification to make", name="NUM")]
     num_modifications: Option<u64>,
