@@ -15,6 +15,7 @@ use sloggers::types::Severity;
 use rand::Rng;
 use rand::seq::SliceRandom;
 use std::ops::Range;
+use std::str;
 use rand::distributions::Distribution;
 use rust_htslib::bcf;
 use rust_htslib::bcf::Format;
@@ -96,6 +97,7 @@ fn main() -> Result<()> {
     let mut rng = rand::thread_rng();
 
     // read in the reference FASTA file
+    info!(log, "Reading reference file {}", &options.reference);
     let mut reference = LinkedHashMap::<String,Vec<u8>>::new();
     let fasta = fasta::Reader::from_file(&options.reference)?;
     for r in fasta.records() {
@@ -106,6 +108,7 @@ fn main() -> Result<()> {
         map(|(i,n)| (n.as_str(), i)).collect::<HashMap<_,_>>();
 
     // validate options
+    info!(log, "Validating options");
     let total_prob = options.prob_insert + options.prob_delete + options.prob_splice;
     if total_prob == 0.0 {
         Err(anyhow!("prob-insert, prob-delete and prob-splice sum to zero!"))?;
@@ -127,7 +130,9 @@ fn main() -> Result<()> {
     }
     let modifications = (0..options.num_modifications.unwrap_or(0)).map(|_| "".to_string()).collect::<Vec<_>>();
     let mut splices = BTreeSet::<Splice>::new();
-    for m in if modifications.is_empty() {&options.modifications} else {&modifications} {
+    for (mn, m) in (if modifications.is_empty() {&options.modifications} else {&modifications}).iter().enumerate() {
+        let mod_name =  if m.is_empty() {(mn+1).to_string()} else {m.clone()};
+        info!(log, "Processing modification: {}", &mod_name);
         let splice = re!(r"(?xi)
             ^(?P<chr>[^:]+)?
             (:((?P<start>[0-9]+)(([.][.]|-)(?P<end>[0-9]+))?)?
@@ -138,12 +143,14 @@ fn main() -> Result<()> {
                 let start = c.name("start").map(|s| s.as_str().parse::<i64>()).transpose()?;
                 let end = c.name("end").map(|e| e.as_str().parse::<i64>()).transpose()?;
                 let replace = c.name("replace").map(|r| r.as_str());
+                info!(log, "Parsed chr={:?}, start={:?}, end={:?}, replace={:?}", &chr, &start, &end, &replace);
 
                 let mod_type = [
                     (&ModType::Insert, &options.prob_insert),
                     (&ModType::Delete, &options.prob_delete),
                     (&ModType::Splice, &options.prob_splice),
                 ].choose_weighted(&mut rng, |t| t.1)?.0;
+                info!(log, "Selected modification type: {:?}", &mod_type);
 
                 let chrs = reference.keys().filter(|n| {
                     let min_len = if let (Some(start), Some(end)) = (start, end) {end-start}
@@ -159,10 +166,12 @@ fn main() -> Result<()> {
                     Some(chr) => chr,
                     None => chrs.choose_weighted(&mut rng, |c| reference[*c].len())?,
                 };
+                info!(log, "Using chr: {}", &chr);
                 let start = match start {
                     Some(start) => start,
                     None => rng.gen_range(0, reference[chr].len() as i64 - delete_range.start),
                 };
+                info!(log, "Using start: {}", &start);
                 let end = match end {
                     Some(end) => end,
                     None => if *mod_type == ModType::Insert { start }
@@ -170,6 +179,7 @@ fn main() -> Result<()> {
                         rng.gen_range(start+delete_range.start, reference[chr].len() as i64)
                     },
                 };
+                info!(log, "Using end: {}", &end);
                 let replace = match replace {
                     Some(replace) => match replace.parse::<usize>() {
                         Ok(num_replace) => rng.sample_iter(&Nucleotide).take(num_replace).collect::<Vec<u8>>(),
@@ -181,6 +191,7 @@ fn main() -> Result<()> {
                         rng.sample_iter(&Nucleotide).take(num_replace as usize).collect::<Vec<u8>>()
                     },
                 };
+                info!(log, "Using replacement: {}", str::from_utf8(&replace)?);
                 Ok(Splice {
                     chr: chr.to_string(),
                     start,
@@ -193,11 +204,15 @@ fn main() -> Result<()> {
 
     let mut header = bcf::header::Header::new();
     for (name, seq) in &reference {
-        header.push_record(format!("##contig=<ID={},length={}>", name, seq.len()).as_bytes());
+        let header_line = format!("##contig=<ID={},length={}>", name, seq.len());
+        info!(log, "Wrote header line: {}", header_line);
+        header.push_record(header_line.as_bytes());
     }
+    info!(log, "Writing VCF file: {}", &options.vcffile);
     let mut vcf = bcf::Writer::from_path(&options.vcffile, &header, false, Format::VCF)?;
     let mut lastsplice: Option<&Splice> = None;
     for splice in &splices {
+        info!(log, "Writing record for splice: {:?}", splice);
         if let Some(lastsplice) = &lastsplice {
             if lastsplice.chr == splice.chr && splice.start < lastsplice.end {
                 Err(anyhow!("Overlapping modifications found, cannot continue: {:?}: {:?}", &splice, &lastsplice))?;
@@ -206,22 +221,28 @@ fn main() -> Result<()> {
         lastsplice = Some(&splice);
 
         let mut record = vcf.empty_record();
-        record.set_rid(Some(refids[splice.chr.as_str()] as u32));
+        let rid = refids[splice.chr.as_str()] as u32;
+        info!(log, "Wrote reference ID {} for chr {}", rid, splice.chr);
+        record.set_rid(Some(rid));
         if splice.start == 0 {
-            record.set_pos(splice.start);
-            record.set_alleles(&[
+            let alleles = [
                 &reference[&splice.chr][splice.start as usize..std::cmp::min(reference[&splice.chr].len() as i64, splice.end+1) as usize],
                 &[splice.replacement.to_vec(),
                     reference[&splice.chr][splice.end as usize..std::cmp::min(reference[&splice.chr].len() as i64, splice.end as i64) as usize].to_vec()].concat(),
-            ])?;
+            ];
+            info!(log, "start=0, writing pos={}, alleles={:?}", splice.start, &alleles);
+            record.set_pos(splice.start);
+            record.set_alleles(&alleles)?;
         }
         else {
-            record.set_pos(splice.start-1);
-            record.set_alleles(&[
+            let alleles = [
                 &reference[&splice.chr][(splice.start-1) as usize..splice.end as usize],
                 &[reference[&splice.chr][(splice.start-1) as usize..splice.start as usize].to_vec(),
                     splice.replacement.to_vec()].concat(),
-            ])?;
+            ];
+            info!(log, "start={}, writing pos={}, alleles={:?}", splice.start, splice.start-1, &alleles);
+            record.set_pos(splice.start-1);
+            record.set_alleles(&alleles)?;
         }
         vcf.write(&record)?;
     }
