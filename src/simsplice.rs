@@ -29,9 +29,8 @@ use lazy_static::lazy_static;
 use lazy_regex::{regex as re};
 
 use slog::info;
-use sloggers::Build;
-use sloggers::terminal::{TerminalLoggerBuilder, Destination};
-use sloggers::types::Severity;
+use slog::Drain;
+use slog_term;
 
 use rand::Rng;
 use rand::seq::SliceRandom;
@@ -103,13 +102,14 @@ struct Replacement {
 }
 
 fn main() -> Result<()> {
-    std::env::set_var("RUST_BACKTRACE", "full");
-    std::env::set_var("RUST_LIB_BACKTRACE", "1");
+    std::env::set_var("RUST_BACKTRACE", "1");
     let options: Options = Options::from_args();
 
-    let mut builder = TerminalLoggerBuilder::new();
-    builder.level(Severity::Info);
-    builder.destination(Destination::Stderr);
+    let plain = slog_term::PlainSyncDecorator::new(std::io::stderr());
+    let log = slog::Logger::root(
+        slog_term::FullFormat::new(plain).build().fuse(),
+        slog::o!()
+    );
 
     let log = builder.build()?;
 
@@ -142,7 +142,7 @@ fn main() -> Result<()> {
     let collated_bamfile = f!(r#"{re!(r"\.bam$").replace_all(&options.bamfile,"")}.collated.bam"#);
     let cpus = num_cpus::get().to_string();
     if !Path::new(&collated_bamfile).exists() {
-        let tmpfile = f!("{collated_bamfile}.{tmpid}.bam.tmp");
+        let tmpfile = f!("{collated_bamfile}.{tmpid}.tmp.bam");
         let collate_cmd = [
             "samtools","collate",
             "-@",&cpus,
