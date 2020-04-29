@@ -1,5 +1,3 @@
-#![feature(try_trait)]
-
 use structopt::StructOpt;
 
 use std::str;
@@ -19,7 +17,7 @@ use flate2::Compression;
 
 use bio::data_structures::interval_tree::IntervalTree;
 
-use anyhow::{anyhow, Result};
+use anyhow::anyhow;
 
 use bio::io::fasta;
 use bio::io::fastq;
@@ -31,14 +29,15 @@ use lazy_static::lazy_static;
 use lazy_regex::{regex as re};
 
 use slog::info;
-use slog::Drain;
+use sloggers::Build;
+use sloggers::terminal::{TerminalLoggerBuilder, Destination};
+use sloggers::types::Severity;
 
 use rand::Rng;
 use rand::seq::SliceRandom;
 use rand::distributions::Alphanumeric;
 use shell_words;
 use shell_words::quote;
-use slog_term;
 
 // INPUTS: reference fasta file, input vcf file, input bam file
 // OUTPUTS: modified reference fasta file, fastq file with modified reads
@@ -62,13 +61,14 @@ use slog_term;
 //   /data/iarpa/analysis/SRR11140744
 //   /data/iarpa/TE/437/{assembly,illumina}
 
+
 pub type Result<T, E = anyhow::Error> = core::result::Result<T, E>;
-enum NoneError {
-    NoneError(std::option::NoneError),
+trait ToResult<T> {
+    fn r(self) -> Result<T>;
 }
-impl From<std::option::NoneError> for NoneError {
-    fn from(none: std::option::NoneError) -> NoneError {
-        NoneError::NoneError(none)
+impl<T> ToResult<T> for Option<T> {
+    fn r(self) -> Result<T> {
+        self.ok_or_else(|| anyhow!("NoneError"))
     }
 }
 
@@ -103,14 +103,15 @@ struct Replacement {
 }
 
 fn main() -> Result<()> {
-    std::env::set_var("RUST_BACKTRACE", "1");
+    std::env::set_var("RUST_BACKTRACE", "full");
+    std::env::set_var("RUST_LIB_BACKTRACE", "1");
     let options: Options = Options::from_args();
 
-    let plain = slog_term::PlainSyncDecorator::new(std::io::stderr());
-    let log = slog::Logger::root(
-        slog_term::FullFormat::new(plain).build().fuse(),
-        slog::o!()
-    );
+    let mut builder = TerminalLoggerBuilder::new();
+    builder.level(Severity::Info);
+    builder.destination(Destination::Stderr);
+
+    let log = builder.build()?;
 
     let mut rng = rand::thread_rng();
     let tmpid = rng.sample_iter(&Alphanumeric).take(10).collect::<String>();
@@ -141,7 +142,7 @@ fn main() -> Result<()> {
     let collated_bamfile = f!(r#"{re!(r"\.bam$").replace_all(&options.bamfile,"")}.collated.bam"#);
     let cpus = num_cpus::get().to_string();
     if !Path::new(&collated_bamfile).exists() {
-        let tmpfile = f!("{collated_bamfile}.{tmpid}.tmp.bam");
+        let tmpfile = f!("{collated_bamfile}.{tmpid}.bam.tmp");
         let collate_cmd = [
             "samtools","collate",
             "-@",&cpus,
@@ -153,9 +154,6 @@ fn main() -> Result<()> {
         cmd(collate_cmd[0],&collate_cmd[1..]).run()?;
         info!(log, "Moving {} to {}", &tmpfile, &collated_bamfile);
         std::fs::rename(&tmpfile, &collated_bamfile)?;
-    }
-    if !Path::new(&collated_bamfile).exists() {
-        Err(anyhow!("File {} not created!", &collated_bamfile))?;
     }
     let mut collated_bam = bam::Reader::from_path(&collated_bamfile)?;
 
@@ -170,11 +168,11 @@ fn main() -> Result<()> {
             Err(anyhow!("Can't handle multiple alleles in VCF file: {:?}", r))?;
         }
         if r.allele_count() > 0 {
-            let rid = r.rid()?;
+            let rid = r.rid().r()?;
             let refname = str::from_utf8(r.header().rid2name(rid)?)?;
             let pos = r.pos(); // 0-based
             let alleles = r.alleles();
-            let ref_allele = alleles.get(0)?;
+            let ref_allele = alleles.get(0).r()?;
             for allele in &alleles[1..] {
                 if !splices.contains_key(refname) {
                     splices.insert(String::from(refname), BTreeSet::new());
@@ -185,7 +183,7 @@ fn main() -> Result<()> {
                     replacement: String::from(str::from_utf8(allele)?),
                 };
                 info!(log, "Storing splice: {:?}", splice);
-                splices.get_mut(refname)?.insert(splice);
+                splices.get_mut(refname).r()?.insert(splice);
             }
         }
     }
@@ -241,10 +239,10 @@ fn main() -> Result<()> {
                 }
             }
             if !options.outfastqfile2.is_empty() && read2.is_none() {
-                Err(anyhow!("Read 2 not found for paired-end BAM file {}: record={:?}, read={}", collated_bamfile, record, str::from_utf8(read1.clone().r()?.qname())?))?
+                Err(anyhow!("Read 2 not found for paired-end BAM file {}: record={:?}", collated_bamfile, record))?
             }
             if read1.is_none() && !read2.is_none() {
-                Err(anyhow!("No read 1 found for corresponding read 2 in paired-end BAM file {}: record={:?}, read={}", collated_bamfile, record, str::from_utf8(read2.clone().r()?.qname())?))?
+                Err(anyhow!("No read 1 found for corresponding read 2 in paired-end BAM file {}: record={:?}", collated_bamfile, record))?
             }
             if is_paired && (read1.is_none() || read2.is_none()) {
                 Err(anyhow!("Expected paired-end reads, but only one read found: read1={:?}, read2={:?}", read1, read2))?;
@@ -262,17 +260,17 @@ fn main() -> Result<()> {
             let mut pos = 0; // position in modified genome
             let mut refpos = 0; // position in original genome
             let mut sequence = Vec::<u8>::new(); // sequence of modified genome
-            let reflen = reference.get(chr)?.len() as i64; // reference length in original genome
+            let reflen = reference.get(chr).r()?.len() as i64; // reference length in original genome
             for splice in splices.iter() {
                 info!(log, "Processing splice: {:?}", &splice);
                 if refpos < splice.start {
-                    let replacement_seq = &reference.get(chr)?[refpos as usize..splice.start as usize];
+                    let replacement_seq = &reference.get(chr).r()?[refpos as usize..splice.start as usize];
                     let replacement = Replacement {
                         offset: pos - refpos,
                         replacement: String::from(str::from_utf8(replacement_seq)?),
                     };
                     info!(log, "Pre-Replacement: {:?}", &replacement);
-                    tree.get_mut(chr)?.insert(refpos..splice.start, replacement);
+                    tree.get_mut(chr).r()?.insert(refpos..splice.start, replacement);
                     pos += splice.start - refpos;
                     refpos = splice.start;
                     info!(log, "pos={}, refpos={}", pos, refpos);
@@ -284,7 +282,7 @@ fn main() -> Result<()> {
                     replacement: splice.replacement.clone(),
                 };
                 info!(log, "Replacement: {:?}", &replacement);
-                tree.get_mut(chr)?.insert(splice.start..splice.stop, replacement);
+                tree.get_mut(chr).r()?.insert(splice.start..splice.stop, replacement);
                 pos += splice.replacement.len() as i64;
                 refpos = splice.stop;
                 info!(log, "pos={}, refpos={}", pos, refpos);
@@ -292,13 +290,13 @@ fn main() -> Result<()> {
                 info!(log, "sequence.len()={}", sequence.len());
             }
             if refpos < reflen {
-                let replacement_seq = &reference.get(chr)?[refpos as usize..reflen as usize];
+                let replacement_seq = &reference.get(chr).r()?[refpos as usize..reflen as usize];
                 let replacement = Replacement {
                     offset: pos - refpos,
                     replacement: String::from(str::from_utf8(replacement_seq)?),
                 };
                 info!(log, "Post-Replacement: {:?}", &replacement);
-                tree.get_mut(chr)?.insert(refpos..reflen, replacement);
+                tree.get_mut(chr).r()?.insert(refpos..reflen, replacement);
                 sequence.extend(replacement_seq);
                 info!(log, "sequence.len()={}", sequence.len());
             }
@@ -314,14 +312,14 @@ fn main() -> Result<()> {
             tree.insert(String::from(chr), IntervalTree::new());
             let mut pos = 0; // position in modified genome
             let mut refpos = 0; // position in original genome
-            let reflen = reference.get(chr)?.len() as i64; // reference length in original genome
+            let reflen = reference.get(chr).r()?.len() as i64; // reference length in original genome
             for splice in splices.iter() {
                 if refpos < splice.start {
                     pos += splice.start - refpos;
                     refpos = splice.start;
                 }
                 if splice.stop - splice.start < splice.replacement.len() as i64 {
-                    let tid = header.tid(chr.as_bytes())?;
+                    let tid = header.tid(chr.as_bytes()).r()?;
                     info!(log, "Filling in region: {}:{}..{}", chr, splice.start, splice.stop);
 
                     // fill up a sample histogram using -1000..1000 bp window around the area of insertion
@@ -365,10 +363,10 @@ fn main() -> Result<()> {
                             let mut longest_block_r = -1i64;
                             for (r, record) in reads.iter().enumerate() {
                                 if let Some(_) = record {
-                                    for (b, block) in blocks[r].as_ref()?.iter().enumerate() {
+                                    for (b, block) in blocks[r].as_ref().r()?.iter().enumerate() {
                                         if longest_block_r >= 0 &&
                                             longest_block_b >= 0 &&
-                                            blocks[longest_block_r as usize].as_ref()?[longest_block_b as usize][1] - blocks[longest_block_r as usize].as_ref()?[longest_block_b as usize][0] < block[1] - block[0]
+                                            blocks[longest_block_r as usize].as_ref().r()?[longest_block_b as usize][1] - blocks[longest_block_r as usize].as_ref().r()?[longest_block_b as usize][0] < block[1] - block[0]
                                         {
                                             longest_block_b = b as i64;
                                             longest_block_r = r as i64;
@@ -377,7 +375,7 @@ fn main() -> Result<()> {
                                 }
                             }
                             if longest_block_r >= 0 && longest_block_b >= 0 {
-                                let longest_block = blocks[longest_block_r as usize].as_ref()?[longest_block_b as usize];
+                                let longest_block = blocks[longest_block_r as usize].as_ref().r()?[longest_block_b as usize];
                                 let longest_block_len = longest_block[1] - longest_block[0];
                                 let fill_offset = (longest_block[0] + (longest_block_len / 2)) +
                                     (fill_region_len / 2);
@@ -385,9 +383,9 @@ fn main() -> Result<()> {
                                 // either read would go past the edge of genome space
                                 for (r, record) in [&r1, &r2].iter().enumerate() {
                                     if let Some(record) = record {
-                                        if blocks[r].as_ref()?[0][0] - fill_offset + fill_region_pos < 0 ||
-                                            record.tid() != reads[longest_block_r as usize].as_ref()?.tid() ||
-                                            blocks[r].as_ref()?.last()?[1] - fill_offset + fill_region_pos > newref.get(str::from_utf8(header.target_names()[record.tid() as usize])?)?.len() as i64
+                                        if blocks[r].as_ref().r()?[0][0] - fill_offset + fill_region_pos < 0 ||
+                                            record.tid() != reads[longest_block_r as usize].as_ref().r()?.tid() ||
+                                            blocks[r].as_ref().r()?.last().r()?[1] - fill_offset + fill_region_pos > newref.get(str::from_utf8(header.target_names()[record.tid() as usize])?).r()?.len() as i64
                                         {
                                             record_buffer.push((r1, r2));
                                             continue 'FILL_REGION_HISTO
@@ -396,7 +394,7 @@ fn main() -> Result<()> {
                                 }
                                 for (r, record) in [&r1, &r2].iter_mut().enumerate() {
                                     if let Some(record) = record {
-                                        for block in blocks[r].as_ref()?.iter() {
+                                        for block in blocks[r].as_ref().r()?.iter() {
                                             let fill_start = block[0] - fill_offset;
                                             let fill_end = block[1] - fill_offset;
                                             // fill in the fillin_region_histo with the blocks
@@ -407,9 +405,9 @@ fn main() -> Result<()> {
                                             }
                                         }
                                         let chr = str::from_utf8(header.target_names().get(
-                                            record.tid() as usize)?)?;
-                                        let oldrefseq = reference.get(chr)?;
-                                        let refseq = newref.get(chr)?;
+                                            record.tid() as usize).r()?)?;
+                                        let oldrefseq = reference.get(chr).r()?;
+                                        let refseq = newref.get(chr).r()?;
                                         let ap = record.aligned_pairs();
                                         let oldseq = record.seq().encoded;
                                         let mut seq = Vec::from(record.seq().encoded);
@@ -431,7 +429,7 @@ fn main() -> Result<()> {
                                                 { seq[qpos as usize].to_ascii_lowercase() }
                                             else { seq[qpos as usize] };
                                         }
-                                        let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut()? };
+                                        let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut().r()? };
                                         out.write(
                                             str::from_utf8(record.qname())?,
                                             None,
@@ -453,7 +451,7 @@ fn main() -> Result<()> {
         info!(log, "Translating and writing the rest of the FASTQ reads");
         loop {
             let (r1, r2) = if !record_buffer.is_empty() {
-                record_buffer.pop()?
+                record_buffer.pop().r()?
             } else {
                 read_pair()?
             };
@@ -461,10 +459,10 @@ fn main() -> Result<()> {
             for (r, record) in [&r1, &r2].iter().enumerate() {
                 if let Some(record) = record {
                     let fprime = if record.is_reverse() { record.reference_end() } else { record.pos() };
-                    let refname = str::from_utf8(header.target_names().get(record.tid() as usize)?)?;
-                    let oldrefseq = reference.get(refname)?;
-                    let refseq = newref.get(refname)?;
-                    for entry in tree.get(refname)?.find(fprime..fprime + 1) {
+                    let refname = str::from_utf8(header.target_names().get(record.tid() as usize).r()?)?;
+                    let oldrefseq = reference.get(refname).r()?;
+                    let refseq = newref.get(refname).r()?;
+                    for entry in tree.get(refname).r()?.find(fprime..fprime + 1) {
                         let replacement = entry.data();
                         let ap = record.aligned_pairs();
                         let oldseq = record.seq().encoded;
@@ -490,7 +488,7 @@ fn main() -> Result<()> {
                                 else { seq[qpos as usize] };
                             }
                         }
-                        let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut()? };
+                        let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut().r()? };
                         out.write(
                             str::from_utf8(record.qname())?,
                             None,

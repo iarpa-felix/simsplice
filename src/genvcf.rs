@@ -1,4 +1,3 @@
-#![feature(try_trait)]
 use structopt::StructOpt;
 use std::collections::{BTreeSet, HashMap};
 use linked_hash_map::LinkedHashMap;
@@ -9,7 +8,9 @@ use lazy_static::lazy_static;
 use lazy_regex::{regex as re};
 
 use slog::info;
-use slog::Drain;
+use sloggers::Build;
+use sloggers::terminal::{TerminalLoggerBuilder, Destination};
+use sloggers::types::Severity;
 
 use rand::Rng;
 use rand::seq::SliceRandom;
@@ -18,15 +19,14 @@ use std::str;
 use rand::distributions::Distribution;
 use rust_htslib::bcf;
 use rust_htslib::bcf::Format;
-use slog_term;
 
 pub type Result<T, E = anyhow::Error> = core::result::Result<T, E>;
-enum NoneError {
-    NoneError(std::option::NoneError),
+trait ToResult<T> {
+    fn r(self) -> Result<T>;
 }
-impl From<std::option::NoneError> for NoneError {
-    fn from(none: std::option::NoneError) -> NoneError {
-        NoneError::NoneError(none)
+impl<T> ToResult<T> for Option<T> {
+    fn r(self) -> Result<T> {
+        self.ok_or_else(|| anyhow!("NoneError"))
     }
 }
 
@@ -89,11 +89,10 @@ fn main() -> Result<()> {
     std::env::set_var("RUST_LIB_BACKTRACE", "1");
     let options: Options = Options::from_args();
 
-    let plain = slog_term::PlainSyncDecorator::new(std::io::stderr());
-    let log = slog::Logger::root(
-        slog_term::FullFormat::new(plain).build().fuse(),
-        slog::o!()
-    );
+    let mut builder = TerminalLoggerBuilder::new();
+    builder.level(Severity::Info);
+    builder.destination(Destination::Stderr);
+    let log = builder.build()?;
 
     let mut rng = rand::thread_rng();
 
