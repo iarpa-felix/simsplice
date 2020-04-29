@@ -157,6 +157,11 @@ fn main() -> Result<()> {
 
     // get the list of splice positions from the VCF file
     let mut splices = BTreeMap::<String,BTreeSet<Splice>>::new();
+    for refname in reference.keys() {
+        if !splices.contains_key(refname) {
+            splices.insert(String::from(refname), BTreeSet::new());
+        }
+    }
     info!(log, "Reading VCF file {}", &options.vcffile);
     let mut vcf = bcf::Reader::from_path(&options.vcffile)?;
     for r in vcf.records() {
@@ -172,9 +177,6 @@ fn main() -> Result<()> {
             let alleles = r.alleles();
             let ref_allele = alleles.get(0).r()?;
             for allele in &alleles[1..] {
-                if !splices.contains_key(refname) {
-                    splices.insert(String::from(refname), BTreeSet::new());
-                }
                 let splice = Splice{
                     start: pos,
                     stop: pos+ref_allele.len() as i64,
