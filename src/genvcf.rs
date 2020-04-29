@@ -8,9 +8,8 @@ use lazy_static::lazy_static;
 use lazy_regex::{regex as re};
 
 use slog::info;
-use sloggers::Build;
-use sloggers::terminal::{TerminalLoggerBuilder, Destination};
-use sloggers::types::Severity;
+use slog_term;
+use slog::Drain;
 
 use rand::Rng;
 use rand::seq::SliceRandom;
@@ -89,10 +88,11 @@ fn main() -> Result<()> {
     std::env::set_var("RUST_LIB_BACKTRACE", "1");
     let options: Options = Options::from_args();
 
-    let mut builder = TerminalLoggerBuilder::new();
-    builder.level(Severity::Info);
-    builder.destination(Destination::Stderr);
-    let log = builder.build()?;
+    let plain = slog_term::PlainSyncDecorator::new(std::io::stderr());
+    let log = slog::Logger::root(
+        slog_term::FullFormat::new(plain).build().fuse(),
+        slog::o!()
+    );
 
     let mut rng = rand::thread_rng();
 

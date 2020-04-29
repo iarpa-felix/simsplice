@@ -111,8 +111,6 @@ fn main() -> Result<()> {
         slog::o!()
     );
 
-    let log = builder.build()?;
-
     let mut rng = rand::thread_rng();
     let tmpid = rng.sample_iter(&Alphanumeric).take(10).collect::<String>();
 
