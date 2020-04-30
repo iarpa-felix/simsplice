@@ -441,8 +441,8 @@ fn main() -> Result<()> {
                                         let oldrefseq = reference.get(chr).r()?;
                                         let refseq = newref.get(chr).r()?;
                                         let ap = record.aligned_pairs();
-                                        let oldseq = record.seq().encoded;
-                                        let mut seq = Vec::from(record.seq().encoded);
+                                        let oldseq = record.seq().as_bytes();
+                                        let mut seq = Vec::from(record.seq().as_bytes());
                                         for a in &ap {
                                             let qpos = a[0];
                                             let rpos = a[1];
@@ -475,8 +475,8 @@ fn main() -> Result<()> {
                                         {
                                             let replacement = entry.data();
                                             let ap = record.aligned_pairs();
-                                            let oldseq = record.seq().encoded;
-                                            let mut seq = Vec::from(record.seq().encoded);
+                                            let oldseq = record.seq().as_bytes();
+                                            let mut seq = Vec::from(record.seq().as_bytes());
                                             for a in &ap {
                                                 let qpos = a[0];
                                                 let rpos = a[1];
@@ -499,7 +499,7 @@ fn main() -> Result<()> {
                                             out.write(
                                                 str::from_utf8(record.qname())?,
                                                 None,
-                                                record.seq().encoded,
+                                                &record.seq().as_bytes(),
                                                 record.qual(),
                                             )?;
                                             break;
@@ -539,8 +539,8 @@ fn main() -> Result<()> {
                         for entry in tree.get(refname).r()?.find(fprime..fprime + 1) {
                             let replacement = entry.data();
                             let ap = record.aligned_pairs();
-                            let oldseq = record.seq().encoded;
-                            let mut seq = Vec::from(record.seq().encoded);
+                            let oldseq = record.seq().as_bytes();
+                            let mut seq = Vec::from(record.seq().as_bytes());
                             for a in &ap {
                                 let qpos = a[0];
                                 let rpos = a[1];
@@ -579,7 +579,7 @@ fn main() -> Result<()> {
                         fastq_records.push(fastq::Record::with_attrs(
                             str::from_utf8(record.qname())?,
                             None,
-                            record.seq().encoded,
+                            &record.seq().as_bytes(),
                             record.qual(),
                         ));
                     }
