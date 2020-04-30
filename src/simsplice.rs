@@ -242,10 +242,10 @@ fn main() -> Result<()> {
             }
             if read1.is_some() || read2.is_some() {
                 if !options.outfastqfile2.is_empty() && read2.is_none() {
-                    Err(anyhow!("Read 2 not found for paired-end BAM file {}: read={:?}", collated_bamfile, str::from_utf8(read1.qname())?))?
+                    Err(anyhow!("Read 2 not found for paired-end BAM file {}: read={:?}", collated_bamfile, str::from_utf8(read1.unwrap().qname())?))?
                 }
                 if read1.is_none() && !read2.is_none() {
-                    Err(anyhow!("No read 1 found for corresponding read 2 in paired-end BAM file {}: read={:?}", collated_bamfile, str::from_utf8(read2.qname())?))?
+                    Err(anyhow!("No read 1 found for corresponding read 2 in paired-end BAM file {}: read={:?}", collated_bamfile, str::from_utf8(read2.unwrap().qname())?))?
                 }
                 if is_paired && (read1.is_none() || read2.is_none()) {
                     let r1name = if let Some(r)=&read1 {String::from(str::from_utf8(r.qname())?)} else {"None".to_string()};
