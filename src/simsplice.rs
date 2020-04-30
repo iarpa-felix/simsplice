@@ -233,7 +233,10 @@ fn main() -> Result<()> {
                         is_paired = true;
                     }
                 }
-                if !collated_bam.read(&mut record)? || record.qname() != read_qname.as_slice() {
+                if !collated_bam.read(&mut record)? {
+                    break
+                }
+                if record.qname() != read_qname.as_slice() {
                     read_qname = Vec::from(record.qname());
                     break
                 }
