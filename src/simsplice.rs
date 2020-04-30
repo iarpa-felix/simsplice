@@ -242,13 +242,13 @@ fn main() -> Result<()> {
                 }
             }
             if !options.outfastqfile2.is_empty() && read2.is_none() {
-                Err(anyhow!("Read 2 not found for paired-end BAM file {}: record={:?}", collated_bamfile, record))?
+                Err(anyhow!("Read 2 not found for paired-end BAM file {}: read={:?}", collated_bamfile, str::from_utf8(record.qname())?))?
             }
             if read1.is_none() && !read2.is_none() {
-                Err(anyhow!("No read 1 found for corresponding read 2 in paired-end BAM file {}: record={:?}", collated_bamfile, record))?
+                Err(anyhow!("No read 1 found for corresponding read 2 in paired-end BAM file {}: record={:?}", collated_bamfile, str::from_utf8(record.qname())?))?
             }
             if is_paired && (read1.is_none() || read2.is_none()) {
-                Err(anyhow!("Expected paired-end reads, but only one read found: read1={:?}, read2={:?}", read1, read2))?;
+                Err(anyhow!("Expected paired-end reads, but only one read found: read1={:?}, read2={:?}", str::from_utf8(read1)?, str::from_utf8(read2)?))?;
             }
             Ok((read1, read2))
         };
