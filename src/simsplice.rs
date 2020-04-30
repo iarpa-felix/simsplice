@@ -343,7 +343,7 @@ fn main() -> Result<()> {
                         let pileup = pileup?;
                         info!(log, "pileup.pos()={}", pileup.pos());
                         let sr_pos = pileup.pos() as i64 - sample_region_beg as i64;
-                        if 0 <= sr_pos && (sr_pos as usize) < sample_region_histo.len()
+                        if 0 <= sr_pos && sr_pos < sample_region_histo.len() as i64
                         {
                             sample_region_histo[(pileup.pos() - sample_region_beg as u32) as usize] = pileup.depth();
                         }
