@@ -234,6 +234,7 @@ fn main() -> Result<()> {
                 }
                 if !collated_bam.read(&mut record)? {
                     eof = true;
+                    break
                 }
                 if record.qname() != read_qname.as_slice() {
                     read_qname = Vec::from(record.qname());
