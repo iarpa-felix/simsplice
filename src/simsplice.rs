@@ -248,7 +248,10 @@ fn main() -> Result<()> {
                 Err(anyhow!("No read 1 found for corresponding read 2 in paired-end BAM file {}: record={:?}", collated_bamfile, str::from_utf8(record.qname())?))?
             }
             if is_paired && (read1.is_none() || read2.is_none()) {
-                Err(anyhow!("Expected paired-end reads, but only one read found: read1={:?}, read2={:?}", str::from_utf8(read1)?, str::from_utf8(read2)?))?;
+                let r1name = if let Some(r)=&read1 {String::from(str::from_utf8(r.qname())?)} else {"None".to_string()};
+                let r2name = if let Some(r)=&read2 {String::from(str::from_utf8(r.qname())?)} else {"None".to_string()};
+                Err(anyhow!("Expected paired-end reads, but only one read found: read1={:?}, read2={:?}",
+                    &r1name, &r2name))?;
             }
             Ok((read1, read2))
         };
