@@ -241,17 +241,19 @@ fn main() -> Result<()> {
                     break
                 }
             }
-            if !options.outfastqfile2.is_empty() && read2.is_none() {
-                Err(anyhow!("Read 2 not found for paired-end BAM file {}: read={:?}", collated_bamfile, str::from_utf8(record.qname())?))?
-            }
-            if read1.is_none() && !read2.is_none() {
-                Err(anyhow!("No read 1 found for corresponding read 2 in paired-end BAM file {}: record={:?}", collated_bamfile, str::from_utf8(record.qname())?))?
-            }
-            if is_paired && (read1.is_none() || read2.is_none()) {
-                let r1name = if let Some(r)=&read1 {String::from(str::from_utf8(r.qname())?)} else {"None".to_string()};
-                let r2name = if let Some(r)=&read2 {String::from(str::from_utf8(r.qname())?)} else {"None".to_string()};
-                Err(anyhow!("Expected paired-end reads, but only one read found: read1={:?}, read2={:?}",
+            if read1.is_some() || read2.is_some() {
+                if !options.outfastqfile2.is_empty() && read2.is_none() {
+                    Err(anyhow!("Read 2 not found for paired-end BAM file {}: read={:?}", collated_bamfile, str::from_utf8(record.qname())?))?
+                }
+                if read1.is_none() && !read2.is_none() {
+                    Err(anyhow!("No read 1 found for corresponding read 2 in paired-end BAM file {}: read={:?}", collated_bamfile, str::from_utf8(record.qname())?))?
+                }
+                if is_paired && (read1.is_none() || read2.is_none()) {
+                    let r1name = if let Some(r)=&read1 {String::from(str::from_utf8(r.qname())?)} else {"None".to_string()};
+                    let r2name = if let Some(r)=&read2 {String::from(str::from_utf8(r.qname())?)} else {"None".to_string()};
+                    Err(anyhow!("Expected paired-end reads, but only one read found: read1={:?}, read2={:?}",
                     &r1name, &r2name))?;
+                }
             }
             Ok((read1, read2))
         };
