@@ -435,6 +435,7 @@ fn main() -> Result<()> {
                             for (r, record) in [&r1, &r2].iter_mut().enumerate() {
                                 if let Some(record) = record {
                                     if !record.is_unmapped() &&
+                                        longest_block_r >=0 && longest_block_b >= 0 &&
                                         record.tid() == reads[longest_block_r as usize].as_ref().r()?.tid()
                                     {
                                         // fill in histogram
