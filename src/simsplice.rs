@@ -175,7 +175,7 @@ fn main() -> Result<()> {
             let refname = str::from_utf8(r.header().rid2name(rid)?)?;
             let pos = r.pos(); // 0-based
             let alleles = r.alleles();
-            let ref_allele = alleles.get(0).r()?;
+            let ref_allele = alleles[0];
             for allele in &alleles[1..] {
                 let splice = Splice{
                     start: pos,
@@ -260,11 +260,11 @@ fn main() -> Result<()> {
             let mut pos = 0; // position in modified genome
             let mut refpos = 0; // position in original genome
             let mut sequence = Vec::<u8>::new(); // sequence of modified genome
-            let reflen = reference.get(chr).r()?.len() as i64; // reference length in original genome
+            let reflen = reference[chr].len() as i64; // reference length in original genome
             for splice in splices.iter() {
                 info!(log, "Processing splice: {:?}", &splice);
                 if refpos < splice.start {
-                    let replacement_seq = &reference.get(chr).r()?[refpos as usize..splice.start as usize];
+                    let replacement_seq = &reference[chr][refpos as usize..splice.start as usize];
                     let replacement = Replacement {
                         offset: pos - refpos,
                         replacement: String::from(str::from_utf8(replacement_seq)?),
@@ -290,7 +290,7 @@ fn main() -> Result<()> {
                 info!(log, "sequence.len()={}", sequence.len());
             }
             if refpos < reflen {
-                let replacement_seq = &reference.get(chr).r()?[refpos as usize..reflen as usize];
+                let replacement_seq = &reference[chr][refpos as usize..reflen as usize];
                 let replacement = Replacement {
                     offset: pos - refpos,
                     replacement: String::from(str::from_utf8(replacement_seq)?),
@@ -312,7 +312,7 @@ fn main() -> Result<()> {
             tree.insert(String::from(chr), IntervalTree::new());
             let mut pos = 0; // position in modified genome
             let mut refpos = 0; // position in original genome
-            let reflen = reference.get(chr).r()?.len() as i64; // reference length in original genome
+            let reflen = reference[chr].len() as i64; // reference length in original genome
             for splice in splices.iter() {
                 if refpos < splice.start {
                     pos += splice.start - refpos;
@@ -356,8 +356,9 @@ fn main() -> Result<()> {
                             if r1.is_none() && r2.is_none() { break 'FILL_REGION }
                             let reads = [&r1, &r2];
                             let blocks = reads.iter().map(
-                                |&r| r.as_ref().map(
-                                    |rr| rr.aligned_blocks())).collect::<Vec<Option<Vec<[i64; 2]>>>>();
+                                |&r| r.as_ref().
+                                    map(
+                                    |rr| if rr.is_unmapped() {vec![]} else {rr.aligned_blocks()})).collect::<Vec<Option<Vec<[i64; 2]>>>>();
                             // find the longest block
                             let mut longest_block_b = -1i64;
                             let mut longest_block_r = -1i64;
@@ -384,16 +385,21 @@ fn main() -> Result<()> {
                                 for (r, record) in [&r1, &r2].iter().enumerate() {
                                     if let Some(record) = record {
                                         if blocks[r].as_ref().r()?[0][0] - fill_offset + fill_region_pos < 0 ||
-                                            record.tid() != reads[longest_block_r as usize].as_ref().r()?.tid() ||
-                                            blocks[r].as_ref().r()?.last().r()?[1] - fill_offset + fill_region_pos > newref.get(str::from_utf8(header.target_names()[record.tid() as usize])?).r()?.len() as i64
+
+                                            blocks[r].as_ref().r()?.last().r()?[1] - fill_offset + fill_region_pos > newref[str::from_utf8(header.target_names()[record.tid() as usize])?].len() as i64
                                         {
                                             record_buffer.push((r1, r2));
                                             continue 'FILL_REGION_HISTO
                                         }
                                     }
                                 }
-                                for (r, record) in [&r1, &r2].iter_mut().enumerate() {
-                                    if let Some(record) = record {
+                            }
+                            for (r, record) in [&r1, &r2].iter_mut().enumerate() {
+                                if let Some(record) = record {
+                                    if !record.is_unaligned() &&
+                                        record.tid() == reads[longest_block_r as usize].as_ref().r()?.tid()
+                                    {
+                                        // fill in histogram
                                         for block in blocks[r].as_ref().r()?.iter() {
                                             let fill_start = block[0] - fill_offset;
                                             let fill_end = block[1] - fill_offset;
@@ -404,8 +410,8 @@ fn main() -> Result<()> {
                                                 fill_region_histo[i as usize] += 1
                                             }
                                         }
-                                        let chr = str::from_utf8(header.target_names().get(
-                                            record.tid() as usize).r()?)?;
+                                        let chr = str::from_utf8(header.target_names()[
+                                            record.tid() as usize])?;
                                         let oldrefseq = reference.get(chr).r()?;
                                         let refseq = newref.get(chr).r()?;
                                         let ap = record.aligned_pairs();
@@ -417,23 +423,29 @@ fn main() -> Result<()> {
                                             let newrpos = rpos - fill_offset + fill_region_pos;
                                             if oldseq[qpos as usize].to_ascii_uppercase() == oldrefseq[rpos as usize].to_ascii_uppercase() {
                                                 seq[qpos as usize] = refseq[newrpos as usize];
-                                            }
-                                            else if oldseq[qpos as usize].to_ascii_uppercase() == refseq[newrpos as usize].to_ascii_uppercase() {
+                                            } else if oldseq[qpos as usize].to_ascii_uppercase() == refseq[newrpos as usize].to_ascii_uppercase() {
                                                 let nucs = [b'A', b'C', b'G', b'T'].iter().filter(|n| **n != refseq[newrpos as usize].to_ascii_uppercase()).collect::<Vec<_>>();
                                                 let randnuc = rng.gen_range(0, 3);
                                                 seq[qpos as usize] = *nucs[randnuc];
                                             }
                                             seq[qpos as usize] = if oldseq[qpos as usize].is_ascii_uppercase()
-                                                { seq[qpos as usize].to_ascii_uppercase() }
-                                            else if oldseq[qpos as usize].is_ascii_lowercase()
-                                                { seq[qpos as usize].to_ascii_lowercase() }
-                                            else { seq[qpos as usize] };
+                                            { seq[qpos as usize].to_ascii_uppercase() } else if oldseq[qpos as usize].is_ascii_lowercase()
+                                            { seq[qpos as usize].to_ascii_lowercase() } else { seq[qpos as usize] };
                                         }
                                         let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut().r()? };
                                         out.write(
                                             str::from_utf8(record.qname())?,
                                             None,
                                             seq.as_slice(),
+                                            record.qual(),
+                                        )?;
+                                    }
+                                    else {
+                                        let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut().r()? };
+                                        out.write(
+                                            str::from_utf8(record.qname())?,
+                                            None,
+                                            record.seq().encoded,
                                             record.qual(),
                                         )?;
                                     }
@@ -449,19 +461,24 @@ fn main() -> Result<()> {
 
         // translate the coordinates and write out the rest of the reads
         info!(log, "Translating and writing the rest of the FASTQ reads");
+        'READ_PAIR:
         loop {
+            let mut fastq_records = Vec::<fastq::Record>::new();
             let (r1, r2) = if !record_buffer.is_empty() {
                 record_buffer.pop().r()?
             } else {
                 read_pair()?
             };
-            if r1.is_none() && r2.is_none() && record_buffer.is_empty() { break }
+            if r1.is_none() && r2.is_none() && record_buffer.is_empty() {
+                break 'READ_PAIR;
+            }
             for (r, record) in [&r1, &r2].iter().enumerate() {
                 if let Some(record) = record {
                     let fprime = if record.is_reverse() { record.reference_end() } else { record.pos() };
                     let refname = str::from_utf8(header.target_names().get(record.tid() as usize).r()?)?;
                     let oldrefseq = reference.get(refname).r()?;
                     let refseq = newref.get(refname).r()?;
+                    let mut found_entry = false;
                     for entry in tree.get(refname).r()?.find(fprime..fprime + 1) {
                         let replacement = entry.data();
                         let ap = record.aligned_pairs();
@@ -488,16 +505,23 @@ fn main() -> Result<()> {
                                 else { seq[qpos as usize] };
                             }
                         }
-                        let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut().r()? };
-                        out.write(
+                        fastq_records.push(fastq::Record::with_attrs(
                             str::from_utf8(record.qname())?,
                             None,
                             seq.as_slice(),
                             record.qual(),
-                        )?;
+                        ));
+                        found_entry = true;
                         break;
                     }
+                    if !found_entry {
+                        continue 'READ_PAIR;
+                    }
                 }
+            }
+            for (r, record) in fastq_records.iter().enumerate() {
+                let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut().r()? };
+                out.write_record(record);
             }
         }
     }
