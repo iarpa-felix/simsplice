@@ -37,6 +37,7 @@ use rand::seq::SliceRandom;
 use rand::distributions::Alphanumeric;
 use shell_words;
 use shell_words::quote;
+use crypto::digest::Digest;
 
 // INPUTS: reference fasta file, input vcf file, input bam file
 // OUTPUTS: modified reference fasta file, fastq file with modified reads
@@ -74,6 +75,8 @@ impl<T> ToResult<T> for Option<T> {
 #[derive(StructOpt, Debug)]
 #[structopt(name = "simsplice", about = "Apply simulated modifications to a reference genome and a set of aligned reads")]
 struct Options {
+    #[structopt(short="h", long="hash-qnames", help = "Run SHA-2 hash on the read names?")]
+    hash_qnames: bool,
     #[structopt(short="g", long="genome", help = "Input reference genome FASTA file", name="FASTAFILE")]
     reference: String,
     #[structopt(short="v", long="vcf", help = "Input VCF file with mutations", name="VCFFILE")]
@@ -147,7 +150,7 @@ fn main() -> Result<()> {
             "-o",&tmpfile,
             &options.bamfile,
         ];
-        info!(log, "Collaing bam file {} to {}", &options.bamfile, &collated_bamfile);
+        info!(log, "Collating bam file {} to {}", &options.bamfile, &collated_bamfile);
         info!(log, "Running command: {}", shell_words::join(&collate_cmd));
         cmd(collate_cmd[0],&collate_cmd[1..]).run()?;
         info!(log, "Moving {} to {}", &tmpfile, &collated_bamfile);
@@ -467,11 +470,14 @@ fn main() -> Result<()> {
                                             { seq[qpos as usize].to_ascii_lowercase() } else { seq[qpos as usize] };
                                         }
                                         let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut().r()? };
+                                        let mut hasher = crypto::sha2::Sha256::new();
+                                        hasher.input(record.qname());
+                                        let qname = hasher.result_str();
                                         out.write(
-                                            str::from_utf8(record.qname())?,
+                                            if options.hash_qnames {&qname} else {str::from_utf8(record.qname())?},
                                             None,
                                             seq.as_slice(),
-                                            record.qual(),
+                                            &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
                                         )?;
                                     }
                                     else {
@@ -504,11 +510,14 @@ fn main() -> Result<()> {
                                                 }
                                             }
                                             let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut().r()? };
+                                            let mut hasher = crypto::sha2::Sha256::new();
+                                            hasher.input(record.qname());
+                                            let qname = hasher.result_str();
                                             out.write(
-                                                str::from_utf8(record.qname())?,
+                                                if options.hash_qnames {&qname} else {str::from_utf8(record.qname())?},
                                                 None,
                                                 &record.seq().as_bytes(),
-                                                record.qual(),
+                                                &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
                                             )?;
                                             break;
                                         }
@@ -570,11 +579,15 @@ fn main() -> Result<()> {
                                     else { seq[qpos as usize] };
                                 }
                             }
+
+                            let mut hasher = crypto::sha2::Sha256::new();
+                            hasher.input(record.qname());
+                            let qname = hasher.result_str();
                             fastq_records.push(fastq::Record::with_attrs(
-                                str::from_utf8(record.qname())?,
+                                if options.hash_qnames {&qname} else {str::from_utf8(record.qname())?},
                                 None,
                                 seq.as_slice(),
-                                record.qual(),
+                                &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
                             ));
                             found_entry = true;
                             break;
@@ -584,11 +597,14 @@ fn main() -> Result<()> {
                         }
                     }
                     else {
+                        let mut hasher = crypto::sha2::Sha256::new();
+                        hasher.input(record.qname());
+                        let qname = hasher.result_str();
                         fastq_records.push(fastq::Record::with_attrs(
-                            str::from_utf8(record.qname())?,
+                            if options.hash_qnames {&qname} else {str::from_utf8(record.qname())?},
                             None,
                             &record.seq().as_bytes(),
-                            record.qual(),
+                            &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
                         ));
                     }
                 }
