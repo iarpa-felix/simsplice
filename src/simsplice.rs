@@ -530,48 +530,58 @@ fn main() -> Result<()> {
             }
             for record in &[&r1, &r2] {
                 if let Some(record) = record {
-                    let fprime = if record.is_reverse() { record.reference_end() } else { record.pos() };
-                    let refname = str::from_utf8(header.target_names().get(record.tid() as usize).r()?)?;
-                    let oldrefseq = reference.get(refname).r()?;
-                    let refseq = newref.get(refname).r()?;
-                    let mut found_entry = false;
-                    for entry in tree.get(refname).r()?.find(fprime..fprime + 1) {
-                        let replacement = entry.data();
-                        let ap = record.aligned_pairs();
-                        let oldseq = record.seq().encoded;
-                        let mut seq = Vec::from(record.seq().encoded);
-                        for a in &ap {
-                            let qpos = a[0];
-                            let rpos = a[1];
-                            let newrpos = rpos + replacement.offset;
-                            if 0 <= newrpos && newrpos < refseq.len() as i64 {
-                                if oldseq[qpos as usize].to_ascii_uppercase() == oldrefseq[rpos as usize].to_ascii_uppercase()
-                                {
-                                    seq[qpos as usize] = refseq[newrpos as usize];
+                    if !record.is_unmapped() {
+                        let fprime = if record.is_reverse() { record.reference_end() } else { record.pos() };
+                        let refname = str::from_utf8(header.target_names().get(record.tid() as usize).r()?)?;
+                        let oldrefseq = reference.get(refname).r()?;
+                        let refseq = newref.get(refname).r()?;
+                        let mut found_entry = false;
+                        for entry in tree.get(refname).r()?.find(fprime..fprime + 1) {
+                            let replacement = entry.data();
+                            let ap = record.aligned_pairs();
+                            let oldseq = record.seq().encoded;
+                            let mut seq = Vec::from(record.seq().encoded);
+                            for a in &ap {
+                                let qpos = a[0];
+                                let rpos = a[1];
+                                let newrpos = rpos + replacement.offset;
+                                if 0 <= newrpos && newrpos < refseq.len() as i64 {
+                                    if oldseq[qpos as usize].to_ascii_uppercase() == oldrefseq[rpos as usize].to_ascii_uppercase()
+                                    {
+                                        seq[qpos as usize] = refseq[newrpos as usize];
+                                    }
+                                    else if oldseq[qpos as usize].to_ascii_uppercase() == refseq[newrpos as usize].to_ascii_uppercase() {
+                                        let nucs = [b'A', b'C', b'G', b'T'].iter().filter(|n| **n != refseq[newrpos as usize].to_ascii_uppercase()).collect::<Vec<_>>();
+                                        let randnuc = rng.gen_range(0, 3);
+                                        seq[qpos as usize] = *nucs[randnuc];
+                                    }
+                                    seq[qpos as usize] = if oldseq[qpos as usize].is_ascii_uppercase()
+                                    { seq[qpos as usize].to_ascii_uppercase() }
+                                    else if oldseq[qpos as usize].is_ascii_lowercase()
+                                    { seq[qpos as usize].to_ascii_lowercase() }
+                                    else { seq[qpos as usize] };
                                 }
-                                else if oldseq[qpos as usize].to_ascii_uppercase() == refseq[newrpos as usize].to_ascii_uppercase() {
-                                    let nucs = [b'A', b'C', b'G', b'T'].iter().filter(|n| **n != refseq[newrpos as usize].to_ascii_uppercase()).collect::<Vec<_>>();
-                                    let randnuc = rng.gen_range(0, 3);
-                                    seq[qpos as usize] = *nucs[randnuc];
-                                }
-                                seq[qpos as usize] = if oldseq[qpos as usize].is_ascii_uppercase()
-                                { seq[qpos as usize].to_ascii_uppercase() }
-                                else if oldseq[qpos as usize].is_ascii_lowercase()
-                                { seq[qpos as usize].to_ascii_lowercase() }
-                                else { seq[qpos as usize] };
                             }
+                            fastq_records.push(fastq::Record::with_attrs(
+                                str::from_utf8(record.qname())?,
+                                None,
+                                seq.as_slice(),
+                                record.qual(),
+                            ));
+                            found_entry = true;
+                            break;
                         }
+                        if !found_entry {
+                            continue 'READ_PAIR;
+                        }
+                    }
+                    else {
                         fastq_records.push(fastq::Record::with_attrs(
                             str::from_utf8(record.qname())?,
                             None,
-                            seq.as_slice(),
+                            record.seq().encoded,
                             record.qual(),
                         ));
-                        found_entry = true;
-                        break;
-                    }
-                    if !found_entry {
-                        continue 'READ_PAIR;
                     }
                 }
             }
