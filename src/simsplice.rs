@@ -215,26 +215,25 @@ fn main() -> Result<()> {
         let mut record = bam::Record::new();
         collated_bam.read(&mut record)?;
         let mut read_qname = Vec::from(record.qname());
+        let mut eof = false;
         let mut read_pair = || -> Result<(Option<bam::Record>, Option<bam::Record>)> {
             let mut read1 = Option::<bam::Record>::None;
             let mut read2 = Option::<bam::Record>::None;
-            loop {
-                if !read_qname.is_empty() {
-                    if !record.is_last_in_template() {
-                        read1 = match &read1 {
-                            Some(_) => if !record.is_secondary() { Some(record.clone()) } else { read1 },
-                            None => Some(record.clone()),
-                        }
-                    } else {
-                        read2 = match &read2 {
-                            Some(_) => if !record.is_secondary() { Some(record.clone()) } else { read2 },
-                            None => Some(record.clone()),
-                        };
-                        is_paired = true;
+            while !eof {
+                if !record.is_last_in_template() {
+                    read1 = match &read1 {
+                        Some(_) => if !record.is_secondary() { Some(record.clone()) } else { read1 },
+                        None => Some(record.clone()),
                     }
+                } else {
+                    read2 = match &read2 {
+                        Some(_) => if !record.is_secondary() { Some(record.clone()) } else { read2 },
+                        None => Some(record.clone()),
+                    };
+                    is_paired = true;
                 }
                 if !collated_bam.read(&mut record)? {
-                    break
+                    eof = true;
                 }
                 if record.qname() != read_qname.as_slice() {
                     read_qname = Vec::from(record.qname());
