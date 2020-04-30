@@ -341,7 +341,8 @@ fn main() -> Result<()> {
                     indexed_bam.fetch(tid, sample_region_beg, sample_region_end)?;
                     for pileup in indexed_bam.pileup() {
                         let pileup = pileup?;
-                        let sr_pos = pileup.pos() - sample_region_beg as u32;
+                        info!(log, "pileup.pos()={}", pileup.pos());
+                        let sr_pos = pileup.pos() as i64 - sample_region_beg as i64;
                         if 0 <= sr_pos && (sr_pos as usize) < sample_region_histo.len()
                         {
                             sample_region_histo[(pileup.pos() - sample_region_beg as u32) as usize] = pileup.depth();
