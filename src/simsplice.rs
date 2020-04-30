@@ -320,7 +320,6 @@ fn main() -> Result<()> {
         let mut record_buffer = Vec::<(Option<Record>, Option<Record>)>::new();
         for (chr, splices) in &mut splices {
             info!(log, "Filling in regions and writing FASTQ records for chr {}", chr);
-            tree.insert(String::from(chr), IntervalTree::new());
             let mut pos = 0; // position in modified genome
             let mut refpos = 0; // position in original genome
             let reflen = reference[chr].len() as i64; // reference length in original genome
@@ -414,6 +413,7 @@ fn main() -> Result<()> {
                                                 break;
                                             }
                                             if !found_entry {
+                                                info!(log, "Dropped record {}", str::from_utf8(record.qname())?);
                                                 continue 'FILL_REGION_HISTO;
                                             }
 
@@ -480,7 +480,7 @@ fn main() -> Result<()> {
                                             &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
                                         )?;
                                     }
-                                    else {
+                                    else if !record.is_unmapped() {
                                         let fprime = if record.is_reverse() { record.reference_end() } else { record.pos() };
                                         let refname = str::from_utf8(header.target_names().get(record.tid() as usize).r()?)?;
                                         let oldrefseq = reference.get(refname).r()?;
@@ -521,6 +521,18 @@ fn main() -> Result<()> {
                                             )?;
                                             break;
                                         }
+                                    }
+                                    else {
+                                        let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut().r()? };
+                                        let mut hasher = crypto::sha2::Sha256::new();
+                                        hasher.input(record.qname());
+                                        let qname = hasher.result_str();
+                                        out.write(
+                                            if options.hash_qnames {&qname} else {str::from_utf8(record.qname())?},
+                                            None,
+                                            &record.seq().as_bytes(),
+                                            &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
+                                        )?;
                                     }
                                 }
                             }
@@ -593,6 +605,7 @@ fn main() -> Result<()> {
                             break;
                         }
                         if !found_entry {
+                            info!(log, "Dropped record {}", str::from_utf8(record.qname())?);
                             continue 'READ_PAIR;
                         }
                     }
