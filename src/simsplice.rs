@@ -341,7 +341,6 @@ fn main() -> Result<()> {
                     indexed_bam.fetch(tid, sample_region_beg, sample_region_end)?;
                     for pileup in indexed_bam.pileup() {
                         let pileup = pileup?;
-                        info!(log, "pileup.pos()={}", pileup.pos());
                         let sr_pos = pileup.pos() as i64 - sample_region_beg as i64;
                         if 0 <= sr_pos && sr_pos < sample_region_histo.len() as i64
                         {
