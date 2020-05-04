@@ -402,7 +402,7 @@ fn main() -> Result<()> {
                         while fill_region_histo[fr_i as usize] < sr_depth as u64 {
                             let (r1, r2) = read_pair()?;
                             if r1.is_none() && r2.is_none() { break 'FILL_REGION }
-                            let reads = [&r1, &r2];
+                            let mut reads = [&r1, &r2];
                             let blocks = reads.iter().map(
                                 |&r| r.as_ref().
                                     map( |rr|
@@ -433,7 +433,7 @@ fn main() -> Result<()> {
 
                                 // skip read pairs not on the same chr or where after translating the positions
                                 // either read would go past the edge of genome space
-                                for (r, record) in [&r1, &r2].iter().enumerate() {
+                                for (r, record) in reads.iter().enumerate() {
                                     if let Some(record) = record {
                                         // make sure the other read's new 5' end maps to the new
                                         if !record.is_unmapped() {
@@ -471,7 +471,7 @@ fn main() -> Result<()> {
                             }
 
                             let mut fastq_records: (Option<fastq::Record>, Option<fastq::Record>) = (None, None);
-                            for (r, record) in [&r1, &r2].iter_mut().enumerate() {
+                            for (r, record) in reads.iter_mut().enumerate() {
                                 if let Some(record) = record {
                                     if !record.is_unmapped() {
                                         let fprime = if record.is_reverse() { record.reference_end() } else { record.pos() };
@@ -537,7 +537,7 @@ fn main() -> Result<()> {
                                 }
                             }
                             if let Some(read1) = &fastq_records.0 {
-                                for (r, record) in [&r1, &r2].iter().enumerate() {
+                                for (r, record) in reads.iter().enumerate() {
                                     if let Some(record) = record {
                                         if !record.is_unmapped() &&
                                             longest_block_r >= 0 && longest_block_b >= 0 &&
