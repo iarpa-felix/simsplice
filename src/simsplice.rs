@@ -469,6 +469,7 @@ fn main() -> Result<()> {
                                     }
                                 }
                             }
+
                             let mut fastq_records: (Option<fastq::Record>, Option<fastq::Record>) = (None, None);
                             for (r, record) in [&r1, &r2].iter_mut().enumerate() {
                                 if let Some(record) = record {
@@ -528,6 +529,7 @@ fn main() -> Result<()> {
                                         let refname = utf8(header.target_names().get(record.tid() as usize).r()?)?;
                                         let oldrefseq = reference.get(refname).r()?;
                                         let refseq = newref.get(refname).r()?;
+                                        let mut found_read = false;
                                         for entry in tree.get(refname).r()?.find(fprime..fprime + 1)
                                         {
                                             let replacement = entry.data();
@@ -563,7 +565,11 @@ fn main() -> Result<()> {
                                             } else {
                                                 fastq_records.1 = Some(fastq_record);
                                             };
+                                            found_read = true;
                                             break;
+                                        }
+                                        if !found_read {
+                                            continue 'FILL_REGION_HISTO;
                                         }
                                     }
                                     else {
