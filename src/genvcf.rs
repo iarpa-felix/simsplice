@@ -14,10 +14,11 @@ use slog::Drain;
 use rand::Rng;
 use rand::seq::SliceRandom;
 use std::ops::Range;
-use std::str;
+
 use rand::distributions::Distribution;
 use rust_htslib::bcf;
 use rust_htslib::bcf::Format;
+use std::str::{from_utf8 as utf8};
 
 pub type Result<T, E = anyhow::Error> = core::result::Result<T, E>;
 trait ToResult<T> {
@@ -191,12 +192,12 @@ fn main() -> Result<()> {
                         rng.sample_iter(&Nucleotide).take(num_replace as usize).collect::<Vec<u8>>()
                     },
                 };
-                info!(log, "Using replacement: {}", str::from_utf8(&replace)?);
+                info!(log, "Using replacement: {}", utf8(&replace)?);
                 Ok(Splice {
                     chr: chr.to_string(),
                     start,
                     end,
-                    replacement: String::from(str::from_utf8(&replace)?),
+                    replacement: String::from(utf8(&replace)?),
                 })
             }).collect::<Result<Vec<Splice>>>()?;
         splices.extend(splice);
@@ -230,7 +231,7 @@ fn main() -> Result<()> {
                 &[splice.replacement.as_bytes().to_vec(),
                     reference[&splice.chr][splice.end as usize..std::cmp::min(reference[&splice.chr].len() as i64, splice.end as i64) as usize].to_vec()].concat(),
             ];
-            info!(log, "start=0, writing pos={}, alleles={:?}", splice.start, &alleles.iter().map(|a| Ok(String::from(str::from_utf8(a)?)) ).collect::<Result<Vec<_>>>()?);
+            info!(log, "start=0, writing pos={}, alleles={:?}", splice.start, &alleles.iter().map(|a| Ok(String::from(utf8(a)?)) ).collect::<Result<Vec<_>>>()?);
             record.set_pos(splice.start);
             record.set_alleles(&alleles)?;
         }
@@ -240,7 +241,7 @@ fn main() -> Result<()> {
                 &[reference[&splice.chr][(splice.start-1) as usize..splice.start as usize].to_vec(),
                     splice.replacement.as_bytes().to_vec()].concat(),
             ];
-            info!(log, "start={}, writing pos={}, alleles={:?}", splice.start, splice.start-1, &alleles.iter().map(|a| Ok(String::from(str::from_utf8(a)?)) ).collect::<Result<Vec<_>>>()?);
+            info!(log, "start={}, writing pos={}, alleles={:?}", splice.start, splice.start-1, &alleles.iter().map(|a| Ok(String::from(utf8(a)?)) ).collect::<Result<Vec<_>>>()?);
             record.set_pos(splice.start-1);
             record.set_alleles(&alleles)?;
         }

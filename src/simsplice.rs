@@ -1,6 +1,5 @@
 use structopt::StructOpt;
 
-use std::str;
 use std::vec::Vec;
 use std::path::Path;
 use std::collections::BTreeMap;
@@ -38,6 +37,7 @@ use rand::distributions::Alphanumeric;
 use shell_words;
 use shell_words::quote;
 use crypto::digest::Digest;
+use std::str::{from_utf8 as utf8};
 
 // INPUTS: reference fasta file, input vcf file, input bam file
 // OUTPUTS: modified reference fasta file, fastq file with modified reads
@@ -102,6 +102,44 @@ struct Splice {
 struct Replacement {
     offset: i64,
     replacement: String,
+}
+
+fn write_fastq_records(
+    read1: &fastq::Record,
+    read2: Option<&fastq::Record>,
+    out: &mut fastq::Writer<Box<dyn Write>>,
+    out2: &mut Option<fastq::Writer<Box<dyn Write>>>,
+    hash_qnames: bool)
+    -> Result<()>
+{
+    if let Some(read2) = read2 {
+        if read1.id() != read2.id() {
+            Err(anyhow!("Read 1 name {} does not match read 2 name {}", read1.id(), read2.id()))?;
+        }
+    }
+    let mut hasher = crypto::sha2::Sha256::new();
+    hasher.input(read1.id().as_bytes());
+    let qname = hasher.result_str();
+    out.write(
+        if hash_qnames {&qname} else {read1.id()},
+        None,
+        read1.seq(),
+        read1.qual(),
+    )?;
+    if let Some(out2) = out2 {
+        if let Some(read2) = read2 {
+            out2.write(
+                if hash_qnames {&qname} else {read2.id()},
+                None,
+                &read2.seq(),
+                &read2.qual(),
+            )?;
+        }
+        else {
+            Err(anyhow!("Read 2 was not given for read {}", read1.id()))?;
+        }
+    }
+    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -175,7 +213,7 @@ fn main() -> Result<()> {
         }
         if r.allele_count() > 0 {
             let rid = r.rid().r()?;
-            let refname = str::from_utf8(r.header().rid2name(rid)?)?;
+            let refname = utf8(r.header().rid2name(rid)?)?;
             let pos = r.pos(); // 0-based
             let alleles = r.alleles();
             let ref_allele = alleles[0];
@@ -183,7 +221,7 @@ fn main() -> Result<()> {
                 let splice = Splice{
                     start: pos,
                     stop: pos+ref_allele.len() as i64,
-                    replacement: String::from(str::from_utf8(allele)?),
+                    replacement: String::from(utf8(allele)?),
                 };
                 info!(log, "Storing splice: {:?}", splice);
                 splices.get_mut(refname).r()?.insert(splice);
@@ -246,14 +284,14 @@ fn main() -> Result<()> {
             }
             if read1.is_some() || read2.is_some() {
                 if !options.outfastqfile2.is_empty() && read2.is_none() {
-                    Err(anyhow!("Read 2 not found for paired-end BAM file {}: read={:?}", collated_bamfile, str::from_utf8(read1.as_ref().unwrap().qname())?))?
+                    Err(anyhow!("Read 2 not found for paired-end BAM file {}: read={:?}", collated_bamfile, utf8(read1.as_ref().unwrap().qname())?))?
                 }
                 if read1.is_none() && !read2.is_none() {
-                    Err(anyhow!("No read 1 found for corresponding read 2 in paired-end BAM file {}: read={:?}", collated_bamfile, str::from_utf8(read2.as_ref().unwrap().qname())?))?
+                    Err(anyhow!("No read 1 found for corresponding read 2 in paired-end BAM file {}: read={:?}", collated_bamfile, utf8(read2.as_ref().unwrap().qname())?))?
                 }
                 if is_paired && (read1.is_none() || read2.is_none()) {
-                    let r1name = if let Some(r)=&read1 {String::from(str::from_utf8(r.qname())?)} else {"None".to_string()};
-                    let r2name = if let Some(r)=&read2 {String::from(str::from_utf8(r.qname())?)} else {"None".to_string()};
+                    let r1name = if let Some(r)=&read1 {String::from(utf8(r.qname())?)} else {"None".to_string()};
+                    let r2name = if let Some(r)=&read2 {String::from(utf8(r.qname())?)} else {"None".to_string()};
                     Err(anyhow!("Expected paired-end reads, but only one read found: read1={:?}, read2={:?}",
                     &r1name, &r2name))?;
                 }
@@ -278,7 +316,7 @@ fn main() -> Result<()> {
                     let replacement_seq = &reference[chr][refpos as usize..splice.start as usize];
                     let replacement = Replacement {
                         offset: pos - refpos,
-                        replacement: String::from(str::from_utf8(replacement_seq)?),
+                        replacement: String::from(utf8(replacement_seq)?),
                     };
                     info!(log, "Pre-Replacement: {:?}", &replacement);
                     tree.get_mut(chr).r()?.insert(refpos..splice.start, replacement);
@@ -304,7 +342,7 @@ fn main() -> Result<()> {
                 let replacement_seq = &reference[chr][refpos as usize..reflen as usize];
                 let replacement = Replacement {
                     offset: pos - refpos,
-                    replacement: String::from(str::from_utf8(replacement_seq)?),
+                    replacement: String::from(utf8(replacement_seq)?),
                 };
                 info!(log, "Post-Replacement: {:?}", &replacement);
                 tree.get_mut(chr).r()?.insert(refpos..reflen, replacement);
@@ -406,14 +444,14 @@ fn main() -> Result<()> {
                                                 { -fill_offset+fill_region_pos }
                                                 else {0};
 
-                                            let refname = str::from_utf8(header.target_names().get(record.tid() as usize).r()?)?;
+                                            let refname = utf8(header.target_names().get(record.tid() as usize).r()?)?;
                                             let mut found_entry = false;
                                             for _ in tree.get(refname).r()?.find(fprime..fprime + 1) {
                                                 found_entry = true;
                                                 break;
                                             }
                                             if !found_entry {
-                                                info!(log, "Dropped record {}", str::from_utf8(record.qname())?);
+                                                info!(log, "Dropped record {}", utf8(record.qname())?);
                                                 continue 'FILL_REGION_HISTO;
                                             }
 
@@ -421,7 +459,7 @@ fn main() -> Result<()> {
                                                 (blocks[r].as_ref().r()?[0][0] - fill_offset + fill_region_pos < 0 ||
 
                                                     blocks[r].as_ref().r()?.last().r()?[1]-fill_offset+fill_region_pos
-                                                        > newref[str::from_utf8(header.target_names()[record.tid() as usize])?].len() as i64)
+                                                        > newref[utf8(header.target_names()[record.tid() as usize])?].len() as i64)
                                             {
                                                 record_buffer.push((r1, r2));
                                                 continue 'FILL_REGION_HISTO
@@ -431,6 +469,7 @@ fn main() -> Result<()> {
                                     }
                                 }
                             }
+                            let mut fastq_records: (Option<fastq::Record>, Option<fastq::Record>) = (None, None);
                             for (r, record) in [&r1, &r2].iter_mut().enumerate() {
                                 if let Some(record) = record {
                                     if !record.is_unmapped() &&
@@ -448,7 +487,8 @@ fn main() -> Result<()> {
                                                 fill_region_histo[i as usize] += 1
                                             }
                                         }
-                                        let chr = str::from_utf8(header.target_names()[
+                                        // update fastq seq record
+                                        let chr = utf8(header.target_names()[
                                             record.tid() as usize])?;
                                         let oldrefseq = reference.get(chr).r()?;
                                         let refseq = newref.get(chr).r()?;
@@ -470,20 +510,22 @@ fn main() -> Result<()> {
                                             { seq[qpos as usize].to_ascii_uppercase() } else if oldseq[qpos as usize].is_ascii_lowercase()
                                             { seq[qpos as usize].to_ascii_lowercase() } else { seq[qpos as usize] };
                                         }
-                                        let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut().r()? };
-                                        let mut hasher = crypto::sha2::Sha256::new();
-                                        hasher.input(record.qname());
-                                        let qname = hasher.result_str();
-                                        out.write(
-                                            if options.hash_qnames {&qname} else {str::from_utf8(record.qname())?},
+
+                                        let fastq_record = fastq::Record::with_attrs(
+                                            utf8(record.qname())?,
                                             None,
                                             seq.as_slice(),
                                             &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
-                                        )?;
+                                        );
+                                        if r == 0 {
+                                            fastq_records.0 = Some(fastq_record);
+                                        } else {
+                                            fastq_records.1 = Some(fastq_record);
+                                        };
                                     }
                                     else if !record.is_unmapped() {
                                         let fprime = if record.is_reverse() { record.reference_end() } else { record.pos() };
-                                        let refname = str::from_utf8(header.target_names().get(record.tid() as usize).r()?)?;
+                                        let refname = utf8(header.target_names().get(record.tid() as usize).r()?)?;
                                         let oldrefseq = reference.get(refname).r()?;
                                         let refseq = newref.get(refname).r()?;
                                         for entry in tree.get(refname).r()?.find(fprime..fprime + 1)
@@ -510,32 +552,46 @@ fn main() -> Result<()> {
                                                     { seq[qpos as usize].to_ascii_lowercase() } else { seq[qpos as usize] };
                                                 }
                                             }
-                                            let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut().r()? };
-                                            let mut hasher = crypto::sha2::Sha256::new();
-                                            hasher.input(record.qname());
-                                            let qname = hasher.result_str();
-                                            out.write(
-                                                if options.hash_qnames {&qname} else {str::from_utf8(record.qname())?},
+                                            let fastq_record = fastq::Record::with_attrs(
+                                                utf8(record.qname())?,
                                                 None,
                                                 &record.seq().as_bytes(),
                                                 &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
-                                            )?;
+                                            );
+                                            if r == 0 {
+                                                fastq_records.0 = Some(fastq_record);
+                                            } else {
+                                                fastq_records.1 = Some(fastq_record);
+                                            };
                                             break;
                                         }
                                     }
                                     else {
-                                        let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut().r()? };
-                                        let mut hasher = crypto::sha2::Sha256::new();
-                                        hasher.input(record.qname());
-                                        let qname = hasher.result_str();
-                                        out.write(
-                                            if options.hash_qnames {&qname} else {str::from_utf8(record.qname())?},
+                                        let fastq_record = fastq::Record::with_attrs(
+                                            utf8(record.qname())?,
                                             None,
                                             &record.seq().as_bytes(),
                                             &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
-                                        )?;
+                                        );
+                                        if r == 0 {
+                                            fastq_records.0 = Some(fastq_record);
+                                        } else {
+                                            fastq_records.1 = Some(fastq_record);
+                                        };
                                     }
                                 }
+                            }
+                            if let Some(read1) = fastq_records.0 {
+                                write_fastq_records(
+                                    &read1,
+                                    fastq_records.1.as_ref(),
+                                    &mut outfastq,
+                                    &mut outfastq2,
+                                    options.hash_qnames,
+                                )?;
+                            }
+                            else {
+                                Err(anyhow!("read1 was None!"))?
                             }
                         }
                     }
@@ -549,7 +605,6 @@ fn main() -> Result<()> {
         info!(log, "Translating and writing the rest of the FASTQ reads");
         'READ_PAIR:
         loop {
-            let mut fastq_records = Vec::<fastq::Record>::new();
             let (r1, r2) = if !record_buffer.is_empty() {
                 record_buffer.pop().r()?
             } else {
@@ -558,11 +613,12 @@ fn main() -> Result<()> {
             if r1.is_none() && r2.is_none() && record_buffer.is_empty() {
                 break 'READ_PAIR;
             }
-            for record in &[&r1, &r2] {
+            let mut fastq_records: (Option<fastq::Record>, Option<fastq::Record>) = (None, None);
+            for (r, record) in [&r1, &r2].iter().enumerate() {
                 if let Some(record) = record {
                     if !record.is_unmapped() {
                         let fprime = if record.is_reverse() { record.reference_end() } else { record.pos() };
-                        let refname = str::from_utf8(header.target_names().get(record.tid() as usize).r()?)?;
+                        let refname = utf8(header.target_names().get(record.tid() as usize).r()?)?;
                         let oldrefseq = reference.get(refname).r()?;
                         let refseq = newref.get(refname).r()?;
                         let mut found_entry = false;
@@ -592,40 +648,51 @@ fn main() -> Result<()> {
                                     else { seq[qpos as usize] };
                                 }
                             }
-
-                            let mut hasher = crypto::sha2::Sha256::new();
-                            hasher.input(record.qname());
-                            let qname = hasher.result_str();
-                            fastq_records.push(fastq::Record::with_attrs(
-                                if options.hash_qnames {&qname} else {str::from_utf8(record.qname())?},
+                            let fastq_record = fastq::Record::with_attrs(
+                                utf8(record.qname())?,
                                 None,
                                 seq.as_slice(),
                                 &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
-                            ));
+                            );
+                            if r == 0 {
+                                fastq_records.0 = Some(fastq_record);
+                            } else {
+                                fastq_records.1 = Some(fastq_record);
+                            };
                             found_entry = true;
                             break;
                         }
                         if !found_entry {
-                            info!(log, "Dropped record {}", str::from_utf8(record.qname())?);
+                            info!(log, "Dropped record {}", utf8(record.qname())?);
                             continue 'READ_PAIR;
                         }
                     }
                     else {
-                        let mut hasher = crypto::sha2::Sha256::new();
-                        hasher.input(record.qname());
-                        let qname = hasher.result_str();
-                        fastq_records.push(fastq::Record::with_attrs(
-                            if options.hash_qnames {&qname} else {str::from_utf8(record.qname())?},
-                            None,
-                            &record.seq().as_bytes(),
-                            &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
-                        ));
+                        let fastq_record = fastq::Record::with_attrs(
+                           utf8(record.qname())?,
+                           None,
+                           &record.seq().as_bytes(),
+                           &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
+                        );
+                        if r == 0 {
+                           fastq_records.0 = Some(fastq_record);
+                        } else {
+                           fastq_records.1 = Some(fastq_record);
+                        };
                     }
                 }
             }
-            for (r, record) in fastq_records.iter().enumerate() {
-                let out = if r == 0 { &mut outfastq } else { outfastq2.as_mut().r()? };
-                out.write_record(record)?;
+            if let Some(read1) = fastq_records.0 {
+                write_fastq_records(
+                    &read1,
+                    fastq_records.1.as_ref(),
+                    &mut outfastq,
+                    &mut outfastq2,
+                    options.hash_qnames,
+                )?;
+            }
+            else {
+                Err(anyhow!("No read1 found for read!"))?;
             }
         }
     }
