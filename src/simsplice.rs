@@ -473,58 +473,7 @@ fn main() -> Result<()> {
                             let mut fastq_records: (Option<fastq::Record>, Option<fastq::Record>) = (None, None);
                             for (r, record) in [&r1, &r2].iter_mut().enumerate() {
                                 if let Some(record) = record {
-                                    if !record.is_unmapped() &&
-                                        longest_block_r >=0 && longest_block_b >= 0 &&
-                                        record.tid() == reads[longest_block_r as usize].as_ref().r()?.tid()
-                                    {
-                                        // fill in histogram
-                                        for block in blocks[r].as_ref().r()?.iter() {
-                                            let fill_start = block[0] - fill_offset;
-                                            let fill_end = block[1] - fill_offset;
-                                            // fill in the fillin_region_histo with the blocks
-                                            for i in std::cmp::max(0, fill_start)..
-                                                std::cmp::min(fill_region_len, fill_end)
-                                            {
-                                                fill_region_histo[i as usize] += 1
-                                            }
-                                        }
-                                        // update fastq seq record
-                                        let chr = utf8(header.target_names()[
-                                            record.tid() as usize])?;
-                                        let oldrefseq = reference.get(chr).r()?;
-                                        let refseq = newref.get(chr).r()?;
-                                        let ap = record.aligned_pairs();
-                                        let oldseq = record.seq().as_bytes();
-                                        let mut seq = Vec::from(record.seq().as_bytes());
-                                        for a in &ap {
-                                            let qpos = a[0];
-                                            let rpos = a[1];
-                                            let newrpos = rpos - fill_offset + fill_region_pos;
-                                            if oldseq[qpos as usize].to_ascii_uppercase() == oldrefseq[rpos as usize].to_ascii_uppercase() {
-                                                seq[qpos as usize] = refseq[newrpos as usize];
-                                            } else if oldseq[qpos as usize].to_ascii_uppercase() == refseq[newrpos as usize].to_ascii_uppercase() {
-                                                let nucs = [b'A', b'C', b'G', b'T'].iter().filter(|n| **n != refseq[newrpos as usize].to_ascii_uppercase()).collect::<Vec<_>>();
-                                                let randnuc = rng.gen_range(0, 3);
-                                                seq[qpos as usize] = *nucs[randnuc];
-                                            }
-                                            seq[qpos as usize] = if oldseq[qpos as usize].is_ascii_uppercase()
-                                            { seq[qpos as usize].to_ascii_uppercase() } else if oldseq[qpos as usize].is_ascii_lowercase()
-                                            { seq[qpos as usize].to_ascii_lowercase() } else { seq[qpos as usize] };
-                                        }
-
-                                        let fastq_record = fastq::Record::with_attrs(
-                                            utf8(record.qname())?,
-                                            None,
-                                            seq.as_slice(),
-                                            &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
-                                        );
-                                        if r == 0 {
-                                            fastq_records.0 = Some(fastq_record);
-                                        } else {
-                                            fastq_records.1 = Some(fastq_record);
-                                        };
-                                    }
-                                    else if !record.is_unmapped() {
+                                    if !record.is_unmapped() {
                                         let fprime = if record.is_reverse() { record.reference_end() } else { record.pos() };
                                         let refname = utf8(header.target_names().get(record.tid() as usize).r()?)?;
                                         let oldrefseq = reference.get(refname).r()?;
@@ -587,7 +536,27 @@ fn main() -> Result<()> {
                                     }
                                 }
                             }
-                            if let Some(read1) = fastq_records.0 {
+                            if let Some(read1) = &fastq_records.0 {
+                                for (r, record) in [&r1, &r2].iter().enumerate() {
+                                    if let Some(record) = record {
+                                        if !record.is_unmapped() &&
+                                            longest_block_r >= 0 && longest_block_b >= 0 &&
+                                            record.tid() == reads[longest_block_r as usize].as_ref().r()?.tid()
+                                        {
+                                            // fill in histogram
+                                            for block in blocks[r].as_ref().r()?.iter() {
+                                                let fill_start = block[0] - fill_offset;
+                                                let fill_end = block[1] - fill_offset;
+                                                // fill in the fillin_region_histo with the blocks
+                                                for i in std::cmp::max(0, fill_start)..
+                                                    std::cmp::min(fill_region_len, fill_end)
+                                                {
+                                                    fill_region_histo[i as usize] += 1
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                                 write_fastq_records(
                                     &read1,
                                     fastq_records.1.as_ref(),
