@@ -591,7 +591,8 @@ fn main() -> Result<()> {
                                 )?;
                             }
                             else {
-                                Err(anyhow!("read1 was None!"))?
+                                Err(anyhow!("read1 was None! for read2={:?}",
+                                    fastq_records.1.map(|r| String::from(r.id()))))?
                             }
                         }
                     }
