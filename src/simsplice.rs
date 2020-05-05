@@ -35,8 +35,6 @@ use rand::Rng;
 use rand::seq::SliceRandom;
 use rand::distributions::Alphanumeric;
 use shell_words;
-use shell_words::quote;
-use crypto::digest::Digest;
 use std::str::{from_utf8 as utf8};
 
 // INPUTS: reference fasta file, input vcf file, input bam file
