@@ -5,5 +5,5 @@ paste - - - - | \
 sort -k1,1 | \
 tr "\t" "\n" | \
 if [[ ${1##*.} = gz ]]; then gzip else cat fi \
->"$1.$$.tmp"
-mv -v "$1.$$.tmp" "$1"
+>"${2-$1}.$$.tmp"
+mv -v "${2-$1}.$$"{.tmp,}
