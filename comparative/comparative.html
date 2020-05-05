@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta name="generator" content="HTML Tidy for HTML5 for Apple macOS version 5.6.0">
+  <title>Covid comparative analysis</title>
+
+  <script language="javascript" src="dalliance-compiled.js"></script>
+  <script language="javascript" src="comparative.js"></script>
+  <script language="javascript">
+
+    var original = new Browser({
+      chr: '13',
+      viewStart: 32864490,
+      viewEnd: 32998468,
+      cookieKey: 'dalliance-browser-original',
+      pageName: 'origHolder',
+      coordSystem: {
+        speciesName: 'Human',
+        taxon: 9606,
+        auth: 'GRCh',
+        version: '37',
+        ucscName: 'hg19',
+      },
+      chains: {
+        mm10ToHg19: {
+          coords: {
+            speciesName: 'Mouse',
+            taxon: 10090,
+            auth: 'GRCm',
+            version: 38
+          },
+          uri: 'http://www.biodalliance.org/datasets/mm10ToHg19.bb',
+          type: 'bigbed'
+        }
+      },
+      sources: [{
+          name: 'Genome',
+          desc: 'Human reference genome build GRCh37',
+          twoBitURI: 'http://www.biodalliance.org/datasets/hg19.2bit',
+          provides_entrypoints: true,
+          disabled: false,
+          pinned: true
+        },
+        { name: 'GENCODE',
+          bwgURI: 'http://www.biodalliance.org/datasets/gencode.bb',
+          stylesheet_uri: 'http://www.biodalliance.org/stylesheets/gencode.xml',
+          collapseSuperGroups: true,
+          trixURI: 'http://www.biodalliance.org/datasets/geneIndex.ix'
+        },
+        { name: 'Repeats',
+          desc: 'Repeat annotation from Ensembl 59',
+          bwgURI: 'http://www.biodalliance.org/datasets/repeats.bb',
+          stylesheet_uri: 'http://www.biodalliance.org/stylesheets/bb-repeats.xml'
+        },
+        { name: 'phastCons',
+          bwgURI: 'http://www.biodalliance.org/datasets/phastCons46way.bw'
+        }
+      ],
+      setDocumentTitle: true,
+      uiPrefix: 'http://www.biodalliance.org/dev/',
+      fullScreen: true,
+      maxWorkers: 0,
+      maxViewWidth: 1000000,
+      noRegistryTabs: true,
+      defaultHighlightFill: 'yellow',
+      defaultHighlightAlpha: 0.15,
+      toolbarBelow: false,
+      disablePoweredBy: true,
+      // browserLinks: {
+      //   Ensembl: 'http://ncbi36.ensembl.org/Homo_sapiens/Location/View?r=${chr}:${start}-${end}',
+      //   UCSC: 'http://genome.ucsc.edu/cgi-bin/hgTracks?db=hg19&position=chr${chr}:${start}-${end}',
+      //   Sequence: 'http://www.derkholm.net:8080/das/hg19comp/sequence?segment=${chr}:${start},${end}'
+      // }
+    });
+    var mouse = new Browser({
+      chr: '5',
+      viewStart: 150492648,
+      viewEnd: 150626627,
+      cookieKey: 'dalliance-browser-modified',
+      pageName: 'modHolder',
+      coordSystem: {
+        speciesName: 'Mouse',
+        taxon: 10090,
+        auth: 'GRCm',
+        version: 38,
+        ucscName: 'mm10'
+      },
+      chains: {
+        hg19ToMm10: {
+          coords: {
+            speciesName: 'Human',
+            taxon: 9606,
+            auth: 'GRCh',
+            version: '37',
+            ucscName: 'hg19',
+          },
+          uri: 'http://www.biodalliance.org/datasets/hg19ToMm10.bb',
+          type: 'bigbed'
+        }
+      },
+      sources: [{
+          name: 'Genome',
+          twoBitURI: 'http://www.biodalliance.org/datasets/GRCm38/mm10.2bit',
+          desc: 'Mouse reference genome build GRCm38',
+          tier_type: 'sequence',
+          provides_entrypoints: true
+        }, 
+        { name: 'Genes',
+          desc: 'Gene structures from GENCODE M2',
+          bwgURI: 'http://www.biodalliance.org/datasets/GRCm38/gencodeM2.bb',
+          stylesheet_uri: 'http://www.biodalliance.org/stylesheets/gencode.xml',
+          collapseSuperGroups: true,
+          trixURI: 'http://www.biodalliance.org/datasets/GRCm38/gencodeM2.ix'
+        }, 
+        { name: 'Repeats',
+          desc: 'Repeat annotation from UCSC',
+          bwgURI: 'http://www.biodalliance.org/datasets/GRCm38/repeats.bb',
+          stylesheet_uri: 'http://www.biodalliance.org/stylesheets/bb-repeats2.xml'
+        }
+      ],
+      uiPrefix: 'http://www.biodalliance.org/dev/',
+      disablePoweredBy: false,
+      toolbarBelow: true,
+    });
+
+    original.addInitListener(function () {
+      var compcan = document.getElementById('comparison');
+      original.addViewListener(function () {
+        refreshComparative(compcan, original, 'mm10ToHg19', modified, 'hg19ToMm10');
+      });
+      modified.addViewListener(function () {
+        refreshComparative(compcan, original, 'mm10ToHg19', modified, 'hg19ToMm10');
+      });
+      compcan.addEventListener('click', function (ev) {
+        syncComparative(original, modified, 'mm10ToHg19');
+      }, false);
+    });
+  </script>
+</head>
+
+<body>
+  <a href='http://www.ensembl.org/' id='enslink' target='_newtab' style='display: none'>Link to Ensembl</a>
+  <div id='origHolder'>Dalliance here...</div>
+  <canvas id='comparison' width='800' height='200'></canvas>
+  <div id='modHolder'>Dalliance genome browser goes here. Unless
+    you have an ancient web browser or something.</div>
+</body>
+
+</html>

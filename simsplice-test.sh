@@ -27,3 +27,18 @@ find -name 'ONT_modified.fastq.gz' -o -name 'illumina_modified_1.fastq.gz' -o -n
 find * -maxdepth 0 -type d |parallel -q @minimap2 bash -xc 'cd "$0" && minimap2 --eqx -aYx sr -t "$(nproc)" assembly.fasta <(gzip -cd illumina_modified_1.fastq.gz) <(gzip -cd illumina_modified_2.fastq.gz) |samtools view -Sbu - |samtools sort -@ "$(nproc)" - -o illumina_modified.bam && samtools index illumina_modified.bam'
 
 find * -maxdepth 0 -type d |parallel -q @minimap2 bash -xc 'cd "$0" && minimap2 --eqx -aYx map-ont -t "$(nproc)" assembly.fasta <(gzip -cd ONT_modified.fastq.gz) |samtools view -Sbu - |samtools sort -@ "$(nproc)" - -o ONT_modified.bam && samtools index ONT_modified.bam'
+
+find -name '*.bam' |parallel -q @bam2bedgraph bash -xc 'bam2bedgraph --bigwig --out "${0%.bam}" "$0"'
+
+find -name '*.fasta' |parallel -q bash -xc '~/src/scripts/fasta_sizes.sh "$0" >"${0%.fasta}.sizes"'
+
+find -name '*.vcf' |parallel -q bash -c '
+set -eux -o pipefail
+~/src/simsplice/comparative/vcf2chainbed.sh "$0" |LC_COLLATE=C sort -k1,1 -k2,2n >"${0%.vcf}.orig2mod.bed" 
+bedToBigBed -type=bed3+9 -as="$HOME/src/simsplice/comparative/chain.as" "${0%.vcf}.orig2mod.bed" "$(dirname "$0")/assembly.sizes" "${0%.vcf}.orig2mod.bb"
+~/src/simsplice/comparative/invert-chainbed.sh "${0%.vcf}.orig2mod.bed" |LC_COLLATE=C sort -k1,1 -k2,2n >"{0%.vcf}.mod2orig.bed" 
+bedToBigBed -type=bed3+9 -as="$HOME/src/simsplice/comparative/chain.as" "${0%.vcf}.mod2orig.bed" "$(dirname "$0")/modified.sizes" "${0%.vcf}.mod2orig.bb"
+~/src/simsplice/comparative/vcf2bed.sh "$0" >(LC_COLLATE=C sort -k1,1 -k2,2n >"${0%.vcf}.qvcf.bed") 2>(LC_COLLATE=C sort -k1,1 -k2,2n >"${0%.vcf}.rvcf.bed") 
+bedToBigBed "${0%.vcr}.qvcf.bed" "$(dirname "$0")/assembly.sizes" "${0%.vcf}.qvcf.bb"
+bedToBigBed "${0%.vcr}.rvcf.bed" "$(dirname "$0")/modified.sizes" "${0%.vcf}.rvcf.bb"
+'
