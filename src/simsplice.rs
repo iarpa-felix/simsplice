@@ -75,8 +75,6 @@ impl<T> ToResult<T> for Option<T> {
 #[derive(StructOpt, Debug)]
 #[structopt(name = "simsplice", about = "Apply simulated modifications to a reference genome and a set of aligned reads")]
 struct Options {
-    #[structopt(short="h", long="hash-qnames", help = "Run SHA-2 hash on the read names?")]
-    hash_qnames: bool,
     #[structopt(short="g", long="genome", help = "Input reference genome FASTA file", name="FASTAFILE")]
     reference: String,
     #[structopt(short="v", long="vcf", help = "Input VCF file with mutations", name="VCFFILE")]
@@ -109,19 +107,15 @@ fn write_fastq_records(
     read2: Option<&fastq::Record>,
     out: &mut fastq::Writer<Box<dyn Write>>,
     out2: &mut Option<fastq::Writer<Box<dyn Write>>>,
-    hash_qnames: bool)
-    -> Result<()>
+) -> Result<()>
 {
     if let Some(read2) = read2 {
         if read1.id() != read2.id() {
             Err(anyhow!("Read 1 name {} does not match read 2 name {}", read1.id(), read2.id()))?;
         }
     }
-    let mut hasher = crypto::sha2::Sha256::new();
-    hasher.input(read1.id().as_bytes());
-    let qname = hasher.result_str();
     out.write(
-        if hash_qnames {&qname} else {read1.id()},
+        read1.id(),
         None,
         read1.seq(),
         read1.qual(),
@@ -129,7 +123,7 @@ fn write_fastq_records(
     if let Some(out2) = out2 {
         if let Some(read2) = read2 {
             out2.write(
-                if hash_qnames {&qname} else {read2.id()},
+                read2.id(),
                 None,
                 &read2.seq(),
                 &read2.qual(),
@@ -562,7 +556,6 @@ fn main() -> Result<()> {
                                     fastq_records.1.as_ref(),
                                     &mut outfastq,
                                     &mut outfastq2,
-                                    options.hash_qnames,
                                 )?;
                             }
                             else {
@@ -664,29 +657,12 @@ fn main() -> Result<()> {
                     fastq_records.1.as_ref(),
                     &mut outfastq,
                     &mut outfastq2,
-                    options.hash_qnames,
                 )?;
             }
             else {
                 Err(anyhow!("No read1 found for read!"))?;
             }
         }
-    }
-
-    // sort the fastq files by read name
-    info!(log, "Sorting the FASTQ files by read name");
-    let tmp1 = f!("{options.outfastqfile}.{tmpid}.tmp");
-
-    let fastq_sort = f!(r#"shopt -s nocasematch; f={quote(&options.outfastqfile)}; if [[ ${{f##*.}} = gz ]]; then gzip -cd "$f"; else cat "$f"; fi | paste - - - - | sort -k1,1 | tr "\t" "\n" |if [[ ${{f##*.}} = gz ]]; then gzip; else cat; fi >{quote(&tmp1)} && mv -v {quote(&tmp1)} {quote(&options.outfastqfile)}"#);
-    let fastq_sort_cmd = ["bash","-c",&fastq_sort];
-    info!(log, "Running command: {}", shell_words::join(&fastq_sort_cmd));
-    cmd(fastq_sort_cmd[0],&fastq_sort_cmd[1..]).run()?;
-    if !options.outfastqfile2.is_empty() {
-        let tmp2 = f!("{options.outfastqfile2}.{tmpid}.tmp");
-        let fastq_sort = f!(r#"shopt -s nocasematch; f={quote(&options.outfastqfile2)}; if [[ ${{f##*.}} = gz ]]; then gzip -cd "$f"; else cat "$f"; fi | paste - - - - | sort -k1,1 | tr "\t" "\n" |if [[ ${{f##*.}} = gz ]]; then gzip; else cat; fi >{quote(&tmp2)} && mv -v {quote(&tmp2)} {quote(&options.outfastqfile2)}"#);
-        let fastq_sort_cmd = ["bash","-c",&fastq_sort];
-        info!(log, "Running command: {}", shell_words::join(&fastq_sort_cmd));
-        cmd(fastq_sort_cmd[0],&fastq_sort_cmd[1..]).run()?;
     }
     Ok(())
 }
