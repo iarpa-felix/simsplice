@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use std::io::Write;
 use std::io;
 
-use rust_htslib::bam::record::Record;
+use rust_htslib::bam::record::{Record, Cigar};
 use rust_htslib::{bam, bam::Read as BamRead};
 use rust_htslib::{bcf, bcf::Read as BcfRead};
 use rust_htslib::bam::ext::BamRecordExtensions;
@@ -69,6 +69,24 @@ impl<T> ToResult<T> for Option<T> {
         self.ok_or_else(|| anyhow!("NoneError"))
     }
 }
+
+fn aligned_blocks(record: &bam::Record) -> Vec<[i64; 2]> {
+    let mut result = Vec::new();
+    let mut pos = record.pos();
+    for entry in record.cigar().iter() {
+        match entry {
+            Cigar::Match(len) | Cigar::Equal(len) | Cigar::Diff(len) => {
+                result.push([pos, pos + *len as i64]);
+                pos += *len as i64;
+            }
+            Cigar::Del(len) => pos += *len as i64,
+            Cigar::RefSkip(len) => pos += *len as i64,
+            _ => (),
+        }
+    }
+    result
+}
+
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "simsplice", about = "Apply simulated modifications to a reference genome and a set of aligned reads")]
@@ -399,7 +417,7 @@ fn main() -> Result<()> {
                                 |&r| r.as_ref().
                                     map( |rr|
                                         if rr.is_unmapped() {vec![]}
-                                        else {rr.aligned_blocks()})).collect::<Vec<Option<Vec<[i64; 2]>>>>();
+                                        else {aligned_blocks(&rr)})).collect::<Vec<Option<Vec<[i64; 2]>>>>();
                             // find the longest block
                             let mut longest_block_b = -1i64;
                             let mut longest_block_r = -1i64;

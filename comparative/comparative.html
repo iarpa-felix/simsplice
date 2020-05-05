@@ -8,54 +8,70 @@
   <script language="javascript" src="dalliance-compiled.js"></script>
   <script language="javascript" src="comparative.js"></script>
   <script language="javascript">
+    let chr = '1'
+    let viewStart = 1
+    let viewEnd = 1000
 
-    var original = new Browser({
-      chr: '13',
-      viewStart: 32864490,
-      viewEnd: 32998468,
-      cookieKey: 'dalliance-browser-original',
+    let original = new Browser({
+      chr: chr,
+      viewStart: viewStart,
+      viewEnd: viewEnd,
+      cookieKey: `dalliance-original`,
       pageName: 'origHolder',
       coordSystem: {
-        speciesName: 'Human',
-        taxon: 9606,
-        auth: 'GRCh',
-        version: '37',
-        ucscName: 'hg19',
+        speciesName: 'orig',
+        auth: ' ',
+        version: ' ',
       },
       chains: {
-        mm10ToHg19: {
+        mod2orig: {
           coords: {
-            speciesName: 'Mouse',
-            taxon: 10090,
-            auth: 'GRCm',
-            version: 38
+            speciesName: 'mod',
+            auth: 'i ',
+            version: ' ',
           },
-          uri: 'http://www.biodalliance.org/datasets/mm10ToHg19.bb',
+          uri: 'modifications.mod2orig.bb',
           type: 'bigbed'
         }
       },
       sources: [{
           name: 'Genome',
-          desc: 'Human reference genome build GRCh37',
-          twoBitURI: 'http://www.biodalliance.org/datasets/hg19.2bit',
-          provides_entrypoints: true,
+          desc: 'Original Genome',
+          twoBitURI: 'assembly.2bit',
           disabled: false,
           pinned: true
         },
-        { name: 'GENCODE',
-          bwgURI: 'http://www.biodalliance.org/datasets/gencode.bb',
-          stylesheet_uri: 'http://www.biodalliance.org/stylesheets/gencode.xml',
-          collapseSuperGroups: true,
-          trixURI: 'http://www.biodalliance.org/datasets/geneIndex.ix'
+        { name: 'illumina',
+          desc: 'illumina_reads',
+          bamURI: 'illumina_original.bam',
+          disabled: false,
+          pinned: true,
         },
-        { name: 'Repeats',
-          desc: 'Repeat annotation from Ensembl 59',
-          bwgURI: 'http://www.biodalliance.org/datasets/repeats.bb',
-          stylesheet_uri: 'http://www.biodalliance.org/stylesheets/bb-repeats.xml'
+        { name: 'illumina',
+          desc: 'illumina',
+          bamURI: 'illumina_original.bw',
+          disabled: false,
+          pinned: true,
         },
-        { name: 'phastCons',
-          bwgURI: 'http://www.biodalliance.org/datasets/phastCons46way.bw'
-        }
+        { name: 'ONT_reads',
+          desc: 'ONT_reads',
+          bamURI: 'ONT_original.bam',
+          collapseSuperGroups: false,
+          disabled: false,
+          pinned: true,
+        },
+        { name: 'ONT',
+          desc: 'ONT',
+          bamURI: 'ONT_original.bw',
+          disabled: false,
+          pinned: true,
+        },
+        { name: 'VCF',
+          desc: 'VCF',
+          bwgURI: 'modifications.qvcf.bb',
+          disabled: false,
+          pinned: true,
+        },
       ],
       setDocumentTitle: true,
       uiPrefix: 'http://www.biodalliance.org/dev/',
@@ -67,84 +83,93 @@
       defaultHighlightAlpha: 0.15,
       toolbarBelow: false,
       disablePoweredBy: true,
-      // browserLinks: {
-      //   Ensembl: 'http://ncbi36.ensembl.org/Homo_sapiens/Location/View?r=${chr}:${start}-${end}',
-      //   UCSC: 'http://genome.ucsc.edu/cgi-bin/hgTracks?db=hg19&position=chr${chr}:${start}-${end}',
-      //   Sequence: 'http://www.derkholm.net:8080/das/hg19comp/sequence?segment=${chr}:${start},${end}'
-      // }
-    });
-    var mouse = new Browser({
-      chr: '5',
-      viewStart: 150492648,
-      viewEnd: 150626627,
-      cookieKey: 'dalliance-browser-modified',
+    })
+
+    let modified = new Browser({
+      chr: chr,
+      viewStart: viewStart,
+      viewEnd: viewEnd,
+      cookieKey: 'dalliance-modified',
       pageName: 'modHolder',
       coordSystem: {
-        speciesName: 'Mouse',
-        taxon: 10090,
-        auth: 'GRCm',
-        version: 38,
-        ucscName: 'mm10'
+        speciesName: 'mod',
+        auth: ' ',
+        version: ' ',
       },
       chains: {
-        hg19ToMm10: {
+        orig2mod: {
           coords: {
-            speciesName: 'Human',
-            taxon: 9606,
-            auth: 'GRCh',
-            version: '37',
-            ucscName: 'hg19',
+            speciesName: 'orig',
+            auth: ' ',
+            version: ' ',
           },
-          uri: 'http://www.biodalliance.org/datasets/hg19ToMm10.bb',
+          uri: 'modifications.orig2mod.bb',
           type: 'bigbed'
         }
       },
       sources: [{
           name: 'Genome',
-          twoBitURI: 'http://www.biodalliance.org/datasets/GRCm38/mm10.2bit',
-          desc: 'Mouse reference genome build GRCm38',
-          tier_type: 'sequence',
-          provides_entrypoints: true
-        }, 
-        { name: 'Genes',
-          desc: 'Gene structures from GENCODE M2',
-          bwgURI: 'http://www.biodalliance.org/datasets/GRCm38/gencodeM2.bb',
-          stylesheet_uri: 'http://www.biodalliance.org/stylesheets/gencode.xml',
-          collapseSuperGroups: true,
-          trixURI: 'http://www.biodalliance.org/datasets/GRCm38/gencodeM2.ix'
-        }, 
-        { name: 'Repeats',
-          desc: 'Repeat annotation from UCSC',
-          bwgURI: 'http://www.biodalliance.org/datasets/GRCm38/repeats.bb',
-          stylesheet_uri: 'http://www.biodalliance.org/stylesheets/bb-repeats2.xml'
-        }
+          desc: 'Modified Genome',
+          twoBitURI: 'modified.2bit',
+          disabled: false,
+          pinned: true
+        },
+        { name: 'illumina',
+          desc: 'illumina_reads',
+          bamURI: 'illumina_modified.bam',
+          disabled: false,
+          pinned: true,
+        },
+        { name: 'illumina',
+          desc: 'illumina',
+          bamURI: 'illumina_modified.bw',
+          disabled: false,
+          pinned: true,
+        },
+        { name: 'ONT_reads',
+          desc: 'ONT_reads',
+          bamURI: 'ONT_modified.bam',
+          collapseSuperGroups: false,
+          disabled: false,
+          pinned: true,
+        },
+        { name: 'ONT',
+          desc: 'ONT',
+          bamURI: 'ONT_modified.bw',
+          disabled: false,
+          pinned: true,
+        },
+        { name: 'VCF',
+          desc: 'VCF',
+          bwgURI: 'modifications.rvcf.bb',
+          disabled: false,
+          pinned: true,
+        },
       ],
       uiPrefix: 'http://www.biodalliance.org/dev/',
       disablePoweredBy: false,
       toolbarBelow: true,
-    });
+    })
 
     original.addInitListener(function () {
       var compcan = document.getElementById('comparison');
       original.addViewListener(function () {
-        refreshComparative(compcan, original, 'mm10ToHg19', modified, 'hg19ToMm10');
+        refreshComparative(compcan, original, 'mod2orig', modified, 'orig2mod');
       });
       modified.addViewListener(function () {
-        refreshComparative(compcan, original, 'mm10ToHg19', modified, 'hg19ToMm10');
+        refreshComparative(compcan, original, 'mod2orig', modified, 'orig2mod');
       });
       compcan.addEventListener('click', function (ev) {
-        syncComparative(original, modified, 'mm10ToHg19');
+        syncComparative(original, modified, 'mod2orig');
       }, false);
-    });
+    })
   </script>
 </head>
 
 <body>
-  <a href='http://www.ensembl.org/' id='enslink' target='_newtab' style='display: none'>Link to Ensembl</a>
-  <div id='origHolder'>Dalliance here...</div>
+  <div id='origHolder'></div>
   <canvas id='comparison' width='800' height='200'></canvas>
-  <div id='modHolder'>Dalliance genome browser goes here. Unless
-    you have an ancient web browser or something.</div>
+  <div id='modHolder'></div>
 </body>
 
 </html>
