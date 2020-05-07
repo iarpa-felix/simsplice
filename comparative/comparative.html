@@ -21,7 +21,7 @@
     xhr.open("GET", 'assembly.sizes', true);
     xhr.onreadystatechange = function() {
       if (this.readyState == 4 && this.status == 200) {
-        document.getElementById('origSizes').innerHTML += 'Original Chromosome List:\n'+this.responseText.trim().split('\n').map((l)=>{let f=l.split('\t'); return `${f[0]}, ${f[1]} bases\n`}).join('')+'\n'
+        document.getElementById('origSizes').innerHTML += 'Original Chromosome List:\n'+this.responseText.trim().split('\n').map((l)=>{let f=l.split('\t'); return `${f[0]}, ${f[1]} bases`}).join('\n')
       }
     }
     xhr.send()
@@ -30,7 +30,7 @@
     xhr2.open("GET", 'modified.sizes', true);
     xhr2.onreadystatechange = function() {
       if (this.readyState == 4 && this.status == 200) {
-        document.getElementById('modSizes').innerHTML += 'Modified Chromosome List:\n'+this.responseText.trim().split('\n').map((l)=>{let f=l.split('\t'); return `${f[0]}, ${f[1]} bases\n`}).join('')+'\n'
+        document.getElementById('modSizes').innerHTML += 'Modified Chromosome List:\n'+this.responseText.trim().split('\n').map((l)=>{let f=l.split('\t'); return `${f[0]}, ${f[1]} bases`}).join('\n')
       }
     }
     xhr2.send()
@@ -39,7 +39,7 @@
     xhr3.open("GET", 'modifications.qvcf.bed', true);
     xhr3.onreadystatechange = function() {
       if (this.readyState == 4 && this.status == 200) {
-        document.getElementById('origSizes').innerHTML += 'Original Modifications:\n'+this.responseText.trim().split('\n').map((l)=>{let f=l.split('\t'); return `${f[3]}: ${f[0]}:${f[1]}..${f[2]}\n`}).join('')+'\n'
+        document.getElementById('origVCF').innerHTML += 'Original Modifications:\n'+this.responseText.trim().split('\n').map((l)=>{let f=l.split('\t'); return `${f[3]}: ${f[0]}:${f[1]}..${f[2]}`}).join('\n')
       }
     }
     xhr3.send()
@@ -48,7 +48,7 @@
     xhr4.open("GET", 'modifications.rvcf.bed', true);
     xhr4.onreadystatechange = function() {
       if (this.readyState == 4 && this.status == 200) {
-        document.getElementById('modSizes').innerHTML += 'Modified Modifications:\n'+this.responseText.trim().split('\n').map((l)=>{let f=l.split('\t'); return `${f[3]}: ${f[0]}:${f[1]}..${f[2]}\n`}).join('')+'\n'
+        document.getElementById('modVCF').innerHTML += 'Modified Modifications:\n'+this.responseText.trim().split('\n').map((l)=>{let f=l.split('\t'); return `${f[3]}: ${f[0]}:${f[1]}..${f[2]}`}).join('\n')
       }
     }
     xhr4.send()
@@ -337,7 +337,9 @@
   <canvas id='comparison' width='800' height='200'></canvas>
   <div id='modHolder'></div>
   <pre id="origSizes"></pre>
+  <pre id="origVCF"></pre>
   <pre id="modSizes"></pre>
+  <pre id="modVCF"></pre>
 </body>
 
 </html>
