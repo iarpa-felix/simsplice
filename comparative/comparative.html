@@ -19,8 +19,7 @@
       viewEnd: viewEnd,
       cookieKey: `dalliance-original`,
       pageName: 'origHolder',
-      fullScreen: true,
-      disableDefaultFeaturePopup: true,
+      fullScreen: false,
       rulerLocation: 'right',
       singleBaseHighlight: false,
       reverseScrolling: true,
@@ -76,14 +75,8 @@
         },
       ],
       uiPrefix: '//www.biodalliance.org/dev/',
-      fullScreen: false,
-      reverseScrolling: true,
       maxWorkers: 0,
       maxViewWidth: 1000000,
-      noRegistryTabs: true,
-      defaultHighlightFill: 'yellow',
-      defaultHighlightAlpha: 0.15,
-      toolbarBelow: false,
       disablePoweredBy: true,
     })
 
@@ -148,6 +141,10 @@
       uiPrefix: '//www.biodalliance.org/dev/',
       disablePoweredBy: true,
       toolbarBelow: true,
+      reverseScrolling: true,
+      fullScreen: false,
+      rulerLocation: 'right',
+      singleBaseHighlight: false,
     })
 
     original.addInitListener(function () {
