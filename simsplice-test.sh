@@ -36,10 +36,10 @@ find * -maxdepth 0 -type d |parallel -q bash -xc 'cd "$0" && ~/src/simsplice/tar
 find -name 'ONT_modified.fastq.gz' -o -name 'illumina_modified_1.fastq.gz' -o -name 'illumina_modified_2.fastq.gz' |parallel -q bash -xc '~/src/simsplice/sort-hash-fastq.sh "${0%.fastq.gz}".{fastq.gz,hashed.fastq.gz}'
 
 # run minimap with illumina reads against modified assembly
-find * -maxdepth 0 -type d |parallel -q @minimap2 bash -xc 'cd "$0" && minimap2 -aYx sr -t "$(nproc)" assembly.fasta <(gzip -cd illumina_modified_1.fastq.gz) <(gzip -cd illumina_modified_2.fastq.gz) |samtools view -Sbu - |samtools sort -@ "$(nproc)" - -o illumina_modified.bam && samtools index illumina_modified.bam'
+find * -maxdepth 0 -type d |parallel -q @minimap2 bash -xc 'cd "$0" && minimap2 -aYx sr -t "$(nproc)" modified.fasta <(gzip -cd illumina_modified_1.fastq.gz) <(gzip -cd illumina_modified_2.fastq.gz) |samtools view -Sbu - |samtools sort -@ "$(nproc)" - -o illumina_modified.bam && samtools index illumina_modified.bam'
 
 # run minimap with ONT reads against modified assembly
-find * -maxdepth 0 -type d |parallel -q @minimap2 bash -xc 'cd "$0" && minimap2 -aYx map-ont -t "$(nproc)" assembly.fasta <(gzip -cd ONT_modified.fastq.gz) |samtools view -Sbu - |samtools sort -@ "$(nproc)" - -o ONT_modified.bam && samtools index ONT_modified.bam'
+find * -maxdepth 0 -type d |parallel -q @minimap2 bash -xc 'cd "$0" && minimap2 -aYx map-ont -t "$(nproc)" modified.fasta <(gzip -cd ONT_modified.fastq.gz) |samtools view -Sbu - |samtools sort -@ "$(nproc)" - -o ONT_modified.bam && samtools index ONT_modified.bam'
 
 # generate bigWig files
 find -name '*.bam' -not -name '*.collated.bam' |parallel -q bash -xc 'bam2bedgraph --bigwig --out "${0%.bam}" "$0"'
