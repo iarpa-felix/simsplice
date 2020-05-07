@@ -1,3 +1,11 @@
+function pusho(obj, k, v) {
+    if (obj[k]) {
+        obj[k].push(v);
+    } else {
+        obj[k] = [v];
+    }
+}
+
 function _fetchMappingBlocks(mapping, chr, min, max, reverse) {
     return new Promise(function(resolve, reject) {
         mapping.sourceBlocksForRange(chr, min, max, function(srcBlocks) {
@@ -46,7 +54,7 @@ function refreshComparative(canvas, topd, topMappingName, bottomd, bottomMapping
       .then(function(mbsl) {
         console.log(mbsl);
 
-        var w = human.tierHolder.offsetWidth;
+        var w = original.tierHolder.offsetWidth;
         if (window.devicePixelRatio > 1) {
             canvas.width = w * 2;
             canvas.height = 400;

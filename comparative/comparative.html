@@ -2,22 +2,28 @@
 <html>
 
 <head>
-  <meta name="generator" content="HTML Tidy for HTML5 for Apple macOS version 5.6.0">
-  <title>Covid comparative analysis</title>
-
-  <script language="javascript" src="dalliance-compiled.js"></script>
+  <title>Covid comparative analysis :: Dalliance</title>
+  <link href="/dalliance/css/bootstrap.css" rel="stylesheet">
+  <link href="/dalliance/css/font-awesome.min.css" rel="stylesheet">
+  <link href="/dalliance/css/dalliance.css" rel="stylesheet">
+  <script language="javascript" src="/dalliance/build/dalliance-all.js"></script>
   <script language="javascript" src="comparative.js"></script>
   <script language="javascript">
-    let chr = '1'
-    let viewStart = 1
-    let viewEnd = 1000
+    var chr = '1'
+    var viewStart = 1
+    var viewEnd = 1000
 
-    let original = new Browser({
+    var original = new Browser({
       chr: chr,
       viewStart: viewStart,
       viewEnd: viewEnd,
       cookieKey: `dalliance-original`,
       pageName: 'origHolder',
+      fullScreen: true,
+      disableDefaultFeaturePopup: true,
+      rulerLocation: 'right',
+      singleBaseHighlight: false,
+      reverseScrolling: true,
       coordSystem: {
         speciesName: 'orig',
         auth: ' ',
@@ -41,28 +47,29 @@
           disabled: false,
           pinned: true
         },
-        { name: 'illumina',
+        { name: 'illumina_reads',
           desc: 'illumina_reads',
-          bamURI: 'illumina_original.bam',
+          //bamURI: 'illumina_original.bam',
+          bwgURI: 'illumina_original.bb',
           disabled: false,
           pinned: true,
         },
         { name: 'illumina',
           desc: 'illumina',
-          bamURI: 'illumina_original.bw',
+          bwgURI: 'illumina_original.bw',
           disabled: false,
           pinned: true,
         },
         { name: 'ONT_reads',
           desc: 'ONT_reads',
-          bamURI: 'ONT_original.bam',
-          collapseSuperGroups: false,
+          //bamURI: 'ONT_original.bam',
+          bwgURI: 'ONT_original.bb',
           disabled: false,
           pinned: true,
         },
         { name: 'ONT',
           desc: 'ONT',
-          bamURI: 'ONT_original.bw',
+          bwgURI: 'ONT_original.bw',
           disabled: false,
           pinned: true,
         },
@@ -73,9 +80,9 @@
           pinned: true,
         },
       ],
-      setDocumentTitle: true,
-      uiPrefix: 'http://www.biodalliance.org/dev/',
+      uiPrefix: 'https://www.biodalliance.org/dev/',
       fullScreen: true,
+      reverseScrolling: true,
       maxWorkers: 0,
       maxViewWidth: 1000000,
       noRegistryTabs: true,
@@ -114,28 +121,30 @@
           disabled: false,
           pinned: true
         },
-        { name: 'illumina',
+        { name: 'illumina_reads',
           desc: 'illumina_reads',
-          bamURI: 'illumina_modified.bam',
+          //bamURI: 'illumina_modified.bam',
+          bwgURI: 'illumina_modified.bb',
           disabled: false,
           pinned: true,
         },
         { name: 'illumina',
           desc: 'illumina',
-          bamURI: 'illumina_modified.bw',
+          bwgURI: 'illumina_modified.bw',
           disabled: false,
           pinned: true,
         },
         { name: 'ONT_reads',
           desc: 'ONT_reads',
-          bamURI: 'ONT_modified.bam',
+          //bamURI: 'ONT_modified.bam',
+          bwgURI: 'ONT_modified.bb',
           collapseSuperGroups: false,
           disabled: false,
           pinned: true,
         },
         { name: 'ONT',
           desc: 'ONT',
-          bamURI: 'ONT_modified.bw',
+          bwgURI: 'ONT_modified.bw',
           disabled: false,
           pinned: true,
         },
