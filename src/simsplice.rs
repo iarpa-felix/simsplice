@@ -16,8 +16,6 @@ use flate2::Compression;
 
 use bio::data_structures::interval_tree::IntervalTree;
 
-use anyhow::anyhow;
-
 use bio::io::fasta;
 use bio::io::fastq;
 use duct::cmd;
@@ -59,14 +57,15 @@ use std::str::{from_utf8 as utf8};
 //   /data/iarpa/analysis/SRR11140744
 //   /data/iarpa/TE/437/{assembly,illumina}
 
-
-pub type Result<T, E = anyhow::Error> = core::result::Result<T, E>;
+use eyre::eyre;
+pub type Report = eyre::Report<color_eyre::Context>;
+pub type Result<T, E = Report> = core::result::Result<T, E>;
 trait ToResult<T> {
     fn r(self) -> Result<T>;
 }
 impl<T> ToResult<T> for Option<T> {
     fn r(self) -> Result<T> {
-        self.ok_or_else(|| anyhow!("NoneError"))
+        self.ok_or_else(|| eyre!("NoneError"))
     }
 }
 
@@ -127,7 +126,7 @@ fn write_fastq_records(
 {
     if let Some(read2) = read2 {
         if read1.id() != read2.id() {
-            Err(anyhow!("Read 1 name {} does not match read 2 name {}", read1.id(), read2.id()))?;
+            Err(eyre!("Read 1 name {} does not match read 2 name {}", read1.id(), read2.id()))?;
         }
     }
     out.write(
@@ -146,7 +145,7 @@ fn write_fastq_records(
             )?;
         }
         else {
-            Err(anyhow!("Read 2 was not given for read {}", read1.id()))?;
+            Err(eyre!("Read 2 was not given for read {}", read1.id()))?;
         }
     }
     Ok(())
@@ -219,7 +218,7 @@ fn main() -> Result<()> {
         let r = r?;
         info!(log, "Processing VCF record: {:?}", &r);
         if r.allele_count() > 2 {
-            Err(anyhow!("Can't handle multiple alleles in VCF file: {:?}", r))?;
+            Err(eyre!("Can't handle multiple alleles in VCF file: {:?}", r))?;
         }
         if r.allele_count() > 0 {
             let rid = r.rid().r()?;
@@ -294,15 +293,15 @@ fn main() -> Result<()> {
             }
             if read1.is_some() || read2.is_some() {
                 if !options.outfastqfile2.is_empty() && read2.is_none() {
-                    Err(anyhow!("Read 2 not found for paired-end BAM file {}: read={:?}", collated_bamfile, utf8(read1.as_ref().unwrap().qname())?))?
+                    Err(eyre!("Read 2 not found for paired-end BAM file {}: read={:?}", collated_bamfile, utf8(read1.as_ref().unwrap().qname())?))?
                 }
                 if read1.is_none() && !read2.is_none() {
-                    Err(anyhow!("No read 1 found for corresponding read 2 in paired-end BAM file {}: read={:?}", collated_bamfile, utf8(read2.as_ref().unwrap().qname())?))?
+                    Err(eyre!("No read 1 found for corresponding read 2 in paired-end BAM file {}: read={:?}", collated_bamfile, utf8(read2.as_ref().unwrap().qname())?))?
                 }
                 if is_paired && (read1.is_none() || read2.is_none()) {
                     let r1name = if let Some(r)=&read1 {String::from(utf8(r.qname())?)} else {"None".to_string()};
                     let r2name = if let Some(r)=&read2 {String::from(utf8(r.qname())?)} else {"None".to_string()};
-                    Err(anyhow!("Expected paired-end reads, but only one read found: read1={:?}, read2={:?}",
+                    Err(eyre!("Expected paired-end reads, but only one read found: read1={:?}, read2={:?}",
                     &r1name, &r2name))?;
                 }
             }
@@ -575,7 +574,7 @@ fn main() -> Result<()> {
                                 )?;
                             }
                             else {
-                                Err(anyhow!("read1 was None! for read2={:?}",
+                                Err(eyre!("read1 was None! for read2={:?}",
                                     fastq_records.1.map(|r| String::from(r.id()))))?
                             }
                         }
@@ -676,7 +675,7 @@ fn main() -> Result<()> {
                 )?;
             }
             else {
-                Err(anyhow!("No read1 found for read!"))?;
+                Err(eyre!("No read1 found for read!"))?;
             }
         }
     }

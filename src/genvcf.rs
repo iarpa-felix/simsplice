@@ -1,7 +1,6 @@
 use structopt::StructOpt;
 use std::collections::{BTreeSet, HashMap};
 use linked_hash_map::LinkedHashMap;
-use anyhow::anyhow;
 use bio::io::fasta;
 use regex::{Regex, Captures};
 use lazy_static::lazy_static;
@@ -20,13 +19,15 @@ use rust_htslib::bcf;
 use rust_htslib::bcf::Format;
 use std::str::{from_utf8 as utf8};
 
-pub type Result<T, E = anyhow::Error> = core::result::Result<T, E>;
+use eyre::eyre;
+pub type Report = eyre::Report<color_eyre::Context>;
+pub type Result<T, E = Report> = core::result::Result<T, E>;
 trait ToResult<T> {
     fn r(self) -> Result<T>;
 }
 impl<T> ToResult<T> for Option<T> {
     fn r(self) -> Result<T> {
-        self.ok_or_else(|| anyhow!("NoneError"))
+        self.ok_or_else(|| eyre!("NoneError"))
     }
 }
 
@@ -112,22 +113,22 @@ fn main() -> Result<()> {
     info!(log, "Validating options");
     let total_prob = options.prob_insert + options.prob_delete + options.prob_splice;
     if total_prob == 0.0 {
-        Err(anyhow!("prob-insert, prob-delete and prob-splice sum to zero!"))?;
+        Err(eyre!("prob-insert, prob-delete and prob-splice sum to zero!"))?;
     }
 
     let delete_range: Vec<Range<i64>> = re!(r"^([0-9]+)(-|\.\.)([0-9]+)$").captures(&options.delete_range).
         iter().map(|c| Ok((c[1].parse::<i64>()?)..(c[3].parse::<i64>()?))).collect::<Result<Vec<_>>>()?;
     let delete_range = delete_range.first().ok_or_else(||
-        anyhow!("Delete range could not be parsed: {}", &options.delete_range)
+        eyre!("Delete range could not be parsed: {}", &options.delete_range)
     )?;
 
     let insert_range: Vec<Range<i64>> = re!(r"^([0-9]+)(-|\.\.)([0-9]+)$").captures(&options.insert_range).
         iter().map(|c| Ok(c[1].parse::<i64>()?..c[3].parse::<i64>()?)).collect::<Result<Vec<_>>>()?;
     let insert_range = insert_range.first().ok_or_else(||
-        anyhow!("Insert range could not be parsed: {}", &options.insert_range)
+        eyre!("Insert range could not be parsed: {}", &options.insert_range)
     )?;
     if options.num_modifications.is_some() && !options.modifications.is_empty() {
-        Err(anyhow!("Specifying both num-modifications and modifications is disallowed"))?;
+        Err(eyre!("Specifying both num-modifications and modifications is disallowed"))?;
     }
     let modifications = (0..options.num_modifications.unwrap_or(0)).map(|_| "".to_string()).collect::<Vec<_>>();
     let mut splices = BTreeSet::<Splice>::new();
@@ -161,7 +162,7 @@ fn main() -> Result<()> {
                     min_len <= reference[n.as_str()].len() as i64
                 }).map(|c| c.as_str()).collect::<Vec<_>>();
                 if chrs.is_empty() {
-                    Err(anyhow!("Could not create modification: {}: No suitable refseqs found", m))?;
+                    Err(eyre!("Could not create modification: {}: No suitable refseqs found", m))?;
                 }
                 let chr = match chr {
                     Some(chr) => chr,
@@ -216,7 +217,7 @@ fn main() -> Result<()> {
         info!(log, "Writing record for splice: {:?}", splice);
         if let Some(lastsplice) = &lastsplice {
             if lastsplice.chr == splice.chr && splice.start < lastsplice.end {
-                Err(anyhow!("Overlapping modifications found, cannot continue: {:?}: {:?}", &splice, &lastsplice))?;
+                Err(eyre!("Overlapping modifications found, cannot continue: {:?}: {:?}", &splice, &lastsplice))?;
             }
         }
         lastsplice = Some(&splice);
