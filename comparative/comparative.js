@@ -1,33 +1,35 @@
+function pusho(obj, k, v) {
+    if (obj[k]) {
+        obj[k].push(v);
+    } else {
+        obj[k] = [v];
+    }
+}
+
 function _fetchMappingBlocks(mapping, chr, min, max, reverse) {
     return new Promise(function(resolve, reject) {
-        mapping.sourceBlocksForRange(chr, min, max, function(srcBlocks) {
+        mapping.chainFetcher.fetchChains(chr, min, max).then(function(chains) {
             var mb = [];
-            for (var sbi = 0; sbi < srcBlocks.length; ++sbi) {
-                var sb = srcBlocks[sbi];
-
-                var mstart = mapping.mapPoint(sb.name, sb.start);
-                var mend = mapping.mapPoint(sb.name, sb.end);
-
-                if (!mstart || !mend)
-                    continue;
+            for (var ci = 0; ci < chains.length; ++ci) {
+                var chain = chains[ci];
 
                 if (reverse) {
                     mb.push({
-                        destChr: sb.name,
-                        destMin: sb.start,
-                        destMax: sb.end,
-                        srcChr: mstart.seq,
-                        srcMin: mstart.pos,
-                        srcMax: mend.pos
+                        destChr: chain.srcChr,
+                        destMin: chain.srcMin,
+                        destMax: chain.srcMax,
+                        srcChr: chain.destChr,
+                        srcMin: chain.destMin,
+                        srcMax: chain.destMax,
                     });
                 } else {
                     mb.push({
-                        srcChr: sb.name,
-                        srcMin: sb.start,
-                        srcMax: sb.end,
-                        destChr: mstart.seq,
-                        destMin: mstart.pos,
-                        destMax: mend.pos
+                        srcChr: chain.srcChr,
+                        srcMin: chain.srcMin,
+                        srcMax: chain.srcMax,
+                        destChr: chain.destChr,
+                        destMin: chain.destMin,
+                        destMax: chain.destMax,
                     });
                 }
             }
@@ -46,7 +48,7 @@ function refreshComparative(canvas, topd, topMappingName, bottomd, bottomMapping
       .then(function(mbsl) {
         console.log(mbsl);
 
-        var w = human.tierHolder.offsetWidth;
+        var w = original.tierHolder.offsetWidth;
         if (window.devicePixelRatio > 1) {
             canvas.width = w * 2;
             canvas.height = 400;

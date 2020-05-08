@@ -8,8 +8,8 @@ if ($F[0] ne $c) {
   $c=$F[0];
 } 
 $v++;
-print join "\t",$F[0],$q,($F[1]-1),"vcf_$v",0,"+";
-print STDERR join "\t",$F[0],$r,$r+(($F[1]-1)-$q),"vcf_$v",0,"+";
+print join "\t",$F[0],($F[1]-1),($F[1]-1)+length($F[3]),"vcf_$v",0,"+";
+print STDERR join "\t",$F[0],$r+(($F[1]-1)-$q),$r+(($F[1]-1)-$q)+length($F[4]),"vcf_$v",0,"+";
 $r+=(($F[1]-1)-$q)+length($F[4]); 
 $q=($F[1]-1)+length($F[3]); 
 ' "$@"
