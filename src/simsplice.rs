@@ -216,9 +216,9 @@ fn main() -> Result<()> {
     let mut vcf = bcf::Reader::from_path(&options.vcffile)?;
     for r in vcf.records() {
         let r = r?;
-        info!(log, "Processing VCF record: {:?}", &r);
+        info!(log, "Processing VCF record: {:#?}", &r);
         if r.allele_count() > 2 {
-            Err(eyre!("Can't handle multiple alleles in VCF file: {:?}", r))?;
+            Err(eyre!("Can't handle multiple alleles in VCF file: {:#?}", r))?;
         }
         if r.allele_count() > 0 {
             let rid = r.rid().r()?;
@@ -232,7 +232,7 @@ fn main() -> Result<()> {
                     stop: pos+ref_allele.len() as i64,
                     replacement: String::from(utf8(allele)?),
                 };
-                info!(log, "Storing splice: {:?}", splice);
+                info!(log, "Storing splice: {:#?}", splice);
                 splices.get_mut(refname).r()?.insert(splice);
             }
         }
@@ -293,15 +293,15 @@ fn main() -> Result<()> {
             }
             if read1.is_some() || read2.is_some() {
                 if !options.outfastqfile2.is_empty() && read2.is_none() {
-                    Err(eyre!("Read 2 not found for paired-end BAM file {}: read={:?}", collated_bamfile, utf8(read1.as_ref().unwrap().qname())?))?
+                    Err(eyre!("Read 2 not found for paired-end BAM file {}: read={:#?}", collated_bamfile, utf8(read1.as_ref().unwrap().qname())?))?
                 }
                 if read1.is_none() && !read2.is_none() {
-                    Err(eyre!("No read 1 found for corresponding read 2 in paired-end BAM file {}: read={:?}", collated_bamfile, utf8(read2.as_ref().unwrap().qname())?))?
+                    Err(eyre!("No read 1 found for corresponding read 2 in paired-end BAM file {}: read={:#?}", collated_bamfile, utf8(read2.as_ref().unwrap().qname())?))?
                 }
                 if is_paired && (read1.is_none() || read2.is_none()) {
                     let r1name = if let Some(r)=&read1 {String::from(utf8(r.qname())?)} else {"None".to_string()};
                     let r2name = if let Some(r)=&read2 {String::from(utf8(r.qname())?)} else {"None".to_string()};
-                    Err(eyre!("Expected paired-end reads, but only one read found: read1={:?}, read2={:?}",
+                    Err(eyre!("Expected paired-end reads, but only one read found: read1={:#?}, read2={:#?}",
                     &r1name, &r2name))?;
                 }
             }
@@ -320,14 +320,14 @@ fn main() -> Result<()> {
             let mut sequence = Vec::<u8>::new(); // sequence of modified genome
             let reflen = reference[chr].len() as i64; // reference length in original genome
             for splice in splices.iter() {
-                info!(log, "Processing splice: {:?}", &splice);
+                info!(log, "Processing splice: {:#?}", &splice);
                 if refpos < splice.start {
                     let replacement_seq = &reference[chr][refpos as usize..splice.start as usize];
                     let replacement = Replacement {
                         offset: pos - refpos,
                         replacement: String::from(utf8(replacement_seq)?),
                     };
-                    info!(log, "Pre-Replacement: {:?}", &replacement);
+                    info!(log, "Pre-Replacement: {:#?}", &replacement);
                     tree.get_mut(chr).r()?.insert(refpos..splice.start, replacement);
                     pos += splice.start - refpos;
                     refpos = splice.start;
@@ -339,7 +339,7 @@ fn main() -> Result<()> {
                     offset: pos - refpos,
                     replacement: splice.replacement.clone(),
                 };
-                info!(log, "Replacement: {:?}", &replacement);
+                info!(log, "Replacement: {:#?}", &replacement);
                 tree.get_mut(chr).r()?.insert(splice.start..splice.stop, replacement);
                 pos += splice.replacement.len() as i64;
                 refpos = splice.stop;
@@ -353,7 +353,7 @@ fn main() -> Result<()> {
                     offset: pos - refpos,
                     replacement: String::from(utf8(replacement_seq)?),
                 };
-                info!(log, "Post-Replacement: {:?}", &replacement);
+                info!(log, "Post-Replacement: {:#?}", &replacement);
                 tree.get_mut(chr).r()?.insert(refpos..reflen, replacement);
                 sequence.extend(replacement_seq);
                 info!(log, "sequence.len()={}", sequence.len());
@@ -423,8 +423,8 @@ fn main() -> Result<()> {
                             for (r, record) in reads.iter().enumerate() {
                                 if let Some(_) = record {
                                     for (b, block) in blocks[r].as_ref().r()?.iter().enumerate() {
-                                        if longest_block_r >= 0 &&
-                                            longest_block_b >= 0 &&
+                                        if longest_block_r < 0 ||
+                                            longest_block_b < 0 ||
                                             blocks[longest_block_r as usize].as_ref().r()?[longest_block_b as usize][1] - blocks[longest_block_r as usize].as_ref().r()?[longest_block_b as usize][0] < block[1] - block[0]
                                         {
                                             longest_block_b = b as i64;
@@ -574,7 +574,7 @@ fn main() -> Result<()> {
                                 )?;
                             }
                             else {
-                                Err(eyre!("read1 was None! for read2={:?}",
+                                Err(eyre!("read1 was None! for read2={:#?}",
                                     fastq_records.1.map(|r| String::from(r.id()))))?
                             }
                         }
