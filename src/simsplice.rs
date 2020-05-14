@@ -460,7 +460,7 @@ fn main() -> Result<()> {
                                                 break;
                                             }
                                             if !found_entry {
-                                                info!(log, "Dropped record {}", utf8(record.qname())?);
+                                                //info!(log, "Dropped record {}", utf8(record.qname())?);
                                                 continue 'FILL_REGION_HISTO;
                                             }
 
@@ -647,7 +647,7 @@ fn main() -> Result<()> {
                             break;
                         }
                         if !found_entry {
-                            info!(log, "Dropped record {}", utf8(record.qname())?);
+                            //info!(log, "Dropped record {}", utf8(record.qname())?);
                             continue 'READ_PAIR;
                         }
                     }
