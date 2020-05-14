@@ -9,51 +9,75 @@
   <script language="javascript" src="/dalliance/build/dalliance-all.js"></script>
   <script language="javascript" src="comparative.js"></script>
   <script language="javascript">
-    var chr = '1'
-    var viewStart = 1
-    var viewEnd = 1000
-    var experiment = window.location.pathname.split('/').splice(-2,1).join('')
+    let chr = '1'
+    let viewStart = 1
+    let viewEnd = 1000
+    let experiment = window.location.pathname.split('/').splice(-2,1).join('')
     document.title = experiment
-    var origname = `${experiment} original`
-    var modname = `${experiment} modified`
+    let origname = `${experiment} original`
+    let modname = `${experiment} modified`
 
-    var xhr = new XMLHttpRequest()
+    let xhr = new XMLHttpRequest()
     xhr.open("GET", 'assembly.sizes', true);
     xhr.onreadystatechange = function() {
       if (this.readyState == 4 && this.status == 200) {
-        document.getElementById('origSizes').innerHTML += 'Original Chromosome List:\n'+this.responseText.trim().split('\n').map((l)=>{let f=l.split('\t'); return `${f[0]}, ${f[1]} bases`}).join('\n')
+        this.responseText.trim().split('\n').forEach((l)=>{
+          let f = l.split('\t')
+          let option = document.createElement('option')
+          option.setAttribute('value',f[0])
+          option.appendChild(document.createTextNode(`${f[0]}, ${f[1]} bases`))
+          document.getElementById('origSizes').appendChild(option)
+        })
       }
     }
     xhr.send()
 
-    var xhr2 = new XMLHttpRequest()
+    let xhr2 = new XMLHttpRequest()
     xhr2.open("GET", 'modified.sizes', true);
     xhr2.onreadystatechange = function() {
       if (this.readyState == 4 && this.status == 200) {
-        document.getElementById('modSizes').innerHTML += 'Modified Chromosome List:\n'+this.responseText.trim().split('\n').map((l)=>{let f=l.split('\t'); return `${f[0]}, ${f[1]} bases`}).join('\n')
+        this.responseText.trim().split('\n').forEach((l)=>{
+          let f = l.split('\t')
+          let option = document.createElement('option')
+          option.setAttribute('value',f[0])
+          option.appendChild(document.createTextNode(`${f[0]}, ${f[1]} bases`))
+          document.getElementById('modSizes').appendChild(option)
+        })
       }
     }
     xhr2.send()
 
-    var xhr3 = new XMLHttpRequest()
+    let xhr3 = new XMLHttpRequest()
     xhr3.open("GET", 'modifications.qvcf.bed', true);
     xhr3.onreadystatechange = function() {
       if (this.readyState == 4 && this.status == 200) {
-        document.getElementById('origVCF').innerHTML += 'Original Modifications:\n'+this.responseText.trim().split('\n').map((l)=>{let f=l.split('\t'); return `${f[3]}: ${f[0]}:${f[1]}..${f[2]}`}).join('\n')
+        this.responseText.trim().split('\n').forEach((l)=>{
+          let f = l.split('\t')
+          let option = document.createElement('option')
+          option.setAttribute('value',l)
+          option.appendChild(document.createTextNode(`${f[3]}: ${f[0]}:${f[1]}..${f[2]}`))
+          document.getElementById('origVCF').appendChild(option)
+        })
       }
     }
     xhr3.send()
 
-    var xhr4 = new XMLHttpRequest()
+    let xhr4 = new XMLHttpRequest()
     xhr4.open("GET", 'modifications.rvcf.bed', true);
     xhr4.onreadystatechange = function() {
       if (this.readyState == 4 && this.status == 200) {
-        document.getElementById('modVCF').innerHTML += 'Modified Modifications:\n'+this.responseText.trim().split('\n').map((l)=>{let f=l.split('\t'); return `${f[3]}: ${f[0]}:${f[1]}..${f[2]}`}).join('\n')
+        this.responseText.trim().split('\n').forEach((l)=>{
+          let f = l.split('\t')
+          let option = document.createElement('option')
+          option.setAttribute('value',l)
+          option.appendChild(document.createTextNode(`${f[3]}: ${f[0]}:${f[1]}..${f[2]}`))
+          document.getElementById('modVCF').appendChild(option)
+        })
       }
     }
     xhr4.send()
 
-    var reads_style = [
+    let reads_style = [
       { type: 'bigbed',
         _labelRE: /^undefined$/,
         _methodRE: /^undefined$/,
@@ -113,7 +137,7 @@
       },
     ]
 
-    var histo_style = [{
+    let histo_style = [{
       type: 'default',
       _labelRE: /^undefined$/,
       _methodRE: /^undefined$/,
@@ -143,7 +167,7 @@
         ]
     }}]
 
-    var original = new Browser({
+    let original = new Browser({
       chr: chr,
       viewStart: viewStart,
       viewEnd: viewEnd,
@@ -318,7 +342,7 @@
     })
 
     original.addInitListener(function () {
-      var compcan = document.getElementById('comparison');
+      let compcan = document.getElementById('comparison');
       original.addViewListener(function () {
         refreshComparative(compcan, original, 'mod2orig_vcfonly', modified, 'orig2mod_vcfonly');
       });
@@ -333,13 +357,21 @@
 </head>
 
 <body>
+  <select id="origSizes" onchange="if (this.selectedIndex > 0) {original.setLocation(this[this.selectedIndex].value, Math.floor(original.viewStart), Math.floor(original.viewEnd))}">
+    <option>-Select Chromosome-</option>
+  </select>
+  <select id="origVCF" onchange="if (this.selectedIndex > 0) {let l=this[this.selectedIndex].value.split('\t'); original.setLocation(l[0], +l[1], +l[2])}">
+    <option>-Select VCF to view-</option>
+  </select>
   <div id='origHolder'></div>
   <canvas id='comparison' width='800' height='200'></canvas>
   <div id='modHolder'></div>
-  <pre id="origSizes"></pre>
-  <pre id="origVCF"></pre>
-  <pre id="modSizes"></pre>
-  <pre id="modVCF"></pre>
+  <select id="modSizes" onchange="if (this.selectedIndex > 0) {modified.setLocation(this[this.selectedIndex].value, Math.floor(modified.viewStart), Math.floor(modified.viewEnd))}">
+    <option>-Select Chromosome-</option>
+  </select>
+  <select id="modVCF" onchange="if (this.selectedIndex > 0) {let l=this[this.selectedIndex].value.split('\t'); modified.setLocation(l[0], +l[1], +l[2])}">
+    <option>-Select VCF to view-</option>
+  </select>
 </body>
 
 </html>
