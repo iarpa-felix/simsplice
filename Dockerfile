@@ -11,7 +11,7 @@ cd simsplice && \
 curl https://sh.rustup.rs -sSf | sh -s -- -y && \
 source $HOME/.cargo/env && \
 rustup default stable && \
-cargo build --release #test
+cargo build --release #test2
 
 FROM boss:6000/archdev as install
 
