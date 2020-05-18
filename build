@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-set -eu -o pipefail
+set -eux -o pipefail
 dr=${DOCKER_REGISTRY:-boss:6000}
 img=${DOCKER_IMAGE:-$(basename "$(cd "$(dirname "$0")" && pwd)")}
 echo "SSH_AGENT_PID=$SSH_AGENT_PID" >&2
 echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >&2
+ssh-add
 DOCKER_BUILDKIT=1 docker build --progress plain --ssh default="$SSH_AUTH_SOCK" -t "$dr/$img" "$@" -- "$(dirname "$0")"
 docker push "$dr/$img"
 k8script.py --launcher -i "$dr/$img" sh -c 'echo /usr/bin/simsplice; echo /usr/bin/genvcf'
