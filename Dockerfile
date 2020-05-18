@@ -1,11 +1,9 @@
 # syntax=docker/dockerfile:experimental
 FROM boss:6000/archdev as git
 
-RUN pacman -Sy --noconfirm --needed llvm llvm-libs clang libffi && pacman -Sc --noconfirm ||true
+RUN pacman -Sy --noconfirm --needed llvm llvm-libs clang libffi git openssh && pacman -Sc --noconfirm ||true
 
-#RUN ln -s /usr/lib/libffi.so.7 /usr/lib/libffi.so.6
-
-RUN  mkdir -p /root/.ssh && chmod 700 /root/.ssh && ssh-keyscan -t rsa gitlab.com >>/root/.ssh/known_hosts
+RUN mkdir -p -m 0600 ~/.ssh && ssh-keyscan gitlab.com >> ~/.ssh/known_hosts
 
 RUN --mount=type=ssh cd /root && \
 git clone -q "git@gitlab.com:bdgp/simsplice.git" && \
