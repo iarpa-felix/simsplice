@@ -2,6 +2,8 @@
 set -eux -o pipefail
 dr=${DOCKER_REGISTRY:-boss:6000}
 img=${DOCKER_IMAGE:-$(basename "$(cd "$(dirname "$0")" && pwd)")}
-DOCKER_BUILDKIT=1 docker build --progress plain --ssh default="$SSH_AUTH_SOCK" -t "$dr/$img" "$@" -- "$(dirname "$0")"
+token=$(kubectl get secrets/gitlab-docker-k8s --template={{.data.token}} |base64 -d || true)
+project_id=$(kubectl get secrets/gitlab-docker-k8s --template={{.data.simsplice}} |base64 -d || true)
+DOCKER_BUILDKIT=1 docker build --build-arg token="$token" --build-arg project_id="$project_id" --progress plain --ssh default="$SSH_AUTH_SOCK" -t "$dr/$img" "$@" -- "$(dirname "$0")"
 docker push "$dr/$img"
 k8script.py --launcher -i "$dr/$img" sh -c 'echo /usr/bin/simsplice; echo /usr/bin/genvcf'
