@@ -5,7 +5,7 @@ RUN pacman -Sy --noconfirm --needed llvm llvm-libs clang libffi git openssh && p
 
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y && \
 source $HOME/.cargo/env && \
-rustup default stable && \
+rustup default stable
 
 RUN mkdir -p -m 0600 ~/.ssh && ssh-keyscan gitlab.com >> ~/.ssh/known_hosts
 ARG project_id
