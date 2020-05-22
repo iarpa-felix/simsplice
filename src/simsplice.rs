@@ -553,6 +553,20 @@ fn main() -> Result<()> {
                                     }
                                 }
                             }
+                            // unmapped reads get passed through unchanged
+                            else {
+                                for (r, record) in reads.iter().enumerate() {
+                                    if let Some(record) = record {
+                                        let fastq_record = fastq::Record::with_attrs(
+                                            utf8(record.qname())?,
+                                            None,
+                                            &record.seq().as_bytes(),
+                                            &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
+                                        );
+                                        fastq_records[r] = Some(fastq_record);
+                                    }
+                                }
+                            }
                             if let Some(read1) = &fastq_records[0] {
                                 // fill in histogram
                                 for (r, record) in reads.iter().enumerate() {
