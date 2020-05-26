@@ -113,7 +113,8 @@ struct Splice {
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone)]
 struct Replacement {
-    offset: i64,
+    origpos: i64,
+    modpos: i64,
     replacement: String,
 }
 
@@ -216,7 +217,7 @@ fn write_fastq_records(
     Ok(())
 }
 
-fn fillin_aligned_pairs(record: &bam::Record, offset: i64, origseq: &[u8], modseq: &[u8]) -> Vec<u8> {
+fn fillin_aligned_pairs(record: &bam::Record, modpos: i64, origseq: &[u8], modseq: &[u8]) -> Vec<u8> {
     let mut rng = rand::thread_rng();
     let ap = record.aligned_pairs();
     let oldseq = record.seq().as_bytes();
@@ -224,7 +225,7 @@ fn fillin_aligned_pairs(record: &bam::Record, offset: i64, origseq: &[u8], modse
     for a in &ap {
         let qpos = a[0];
         let rpos = a[1];
-        let newrpos = rpos + offset;
+        let newrpos = rpos-record.pos()+modpos;
         if 0 <= newrpos && newrpos < modseq.len() as i64 {
             // old match
             if oldseq[qpos as usize].to_ascii_uppercase() == origseq[rpos as usize].to_ascii_uppercase() {
@@ -262,11 +263,11 @@ fn main() -> Result<()> {
 
     // read in the reference FASTA file
     info!(log, "Reading in FASTA assembly file {}", &options.reference);
-    let mut origseqs = BTreeMap::<String,Vec<u8>>::new();
+    let mut origrefseqs = BTreeMap::<String,Vec<u8>>::new();
     let fasta = fasta::Reader::from_file(&options.reference)?;
     for r in fasta.records() {
         let r = r?;
-        origseqs.insert(String::from(r.id()), Vec::from(r.seq()));
+        origrefseqs.insert(String::from(r.id()), Vec::from(r.seq()));
     }
 
     // make a bam index file if it does not exist
@@ -302,7 +303,7 @@ fn main() -> Result<()> {
 
     // get the list of splice positions from the VCF file
     let mut splices = BTreeMap::<String,BTreeSet<Splice>>::new();
-    for refname in origseqs.keys() {
+    for refname in origrefseqs.keys() {
         if !splices.contains_key(refname) {
             splices.insert(String::from(refname), BTreeSet::new());
         }
@@ -361,29 +362,30 @@ fn main() -> Result<()> {
 
         // Build an interval tree using the splice positions to map between original and modified reference coordinates.
         // Also build and write the output reference fasta file.
-        let mut newref = BTreeMap::<String, Vec<u8>>::new();
+        let mut modrefseqs = BTreeMap::<String, Vec<u8>>::new();
         let mut tree = BTreeMap::<String, IntervalTree<i64, Replacement>>::new();
-        // iterate through each chromosome arm
-        for (chr, splices) in &mut splices {
-            info!(log, "Building interval tree and writing fasta record for chr {}", chr);
+        // iterate through each reference name
+        for (refname, splices) in &mut splices {
+            info!(log, "Building interval tree and writing fasta record for refname {}", refname);
             // add the arm to the tree
-            tree.insert(String::from(chr), IntervalTree::new());
+            tree.insert(String::from(refname), IntervalTree::new());
             let mut modpos = 0; // position in modified genome
             let mut origpos = 0; // position in original genome
             let mut modseq = Vec::<u8>::new(); // sequence of modified genome
-            let origlen = origseqs[chr].len() as i64; // reference length in original genome
+            let origlen = origrefseqs[refname].len() as i64; // reference length in original genome
             // iterate through the splice records for each arm
             for splice in splices.iter() {
                 info!(log, "Processing splice: {:#?}", &splice);
                 // pre-replacement
                 if origpos < splice.start {
-                    let replacement_seq = &origseqs[chr][origpos as usize..splice.start as usize];
+                    let replacement_seq = &origrefseqs[refname][origpos as usize..splice.start as usize];
                     let replacement = Replacement {
-                        offset: modpos - origpos,
+                        origpos,
+                        modpos,
                         replacement: String::from(utf8(replacement_seq)?),
                     };
-                    info!(log, "Pre-Replacement at {}:{}..{}: {:#?}", chr, origpos, splice.start, &replacement);
-                    tree.get_mut(chr).r()?.insert(origpos..splice.start, replacement);
+                    info!(log, "Pre-Replacement at {}:{}..{}: {:#?}", refname, origpos, splice.start, &replacement);
+                    tree.get_mut(refname).r()?.insert(origpos..splice.start, replacement);
                     modpos += splice.start - origpos;
                     origpos = splice.start;
                     info!(log, "modpos={}, origpos={}", modpos, origpos);
@@ -392,11 +394,12 @@ fn main() -> Result<()> {
                 }
                 // replacement
                 let replacement = Replacement {
-                    offset: modpos - origpos,
+                    origpos,
+                    modpos,
                     replacement: splice.replacement.clone(),
                 };
-                info!(log, "Replacement at {}:{}..{}: {:#?}", chr, splice.start, splice.stop, &replacement);
-                tree.get_mut(chr).r()?.insert(splice.start..splice.stop, replacement);
+                info!(log, "Replacement at {}:{}..{}: {:#?}", refname, splice.start, splice.stop, &replacement);
+                tree.get_mut(refname).r()?.insert(splice.start..splice.stop, replacement);
                 modpos += splice.replacement.len() as i64;
                 origpos = splice.stop;
                 info!(log, "modpos={}, origpos={}", modpos, origpos);
@@ -405,29 +408,30 @@ fn main() -> Result<()> {
             }
             // post-replacement
             if origpos < origlen {
-                let replacement_seq = &origseqs[chr][origpos as usize..origlen as usize];
+                let replacement_seq = &origrefseqs[refname][origpos as usize..origlen as usize];
                 let replacement = Replacement {
-                    offset: modpos - origpos,
+                    origpos,
+                    modpos,
                     replacement: String::from(utf8(replacement_seq)?),
                 };
-                info!(log, "Post-Replacement at {}:{}..{}: {:#?}", chr, origpos, origlen, &replacement);
-                tree.get_mut(chr).r()?.insert(origpos..origlen, replacement);
+                info!(log, "Post-Replacement at {}:{}..{}: {:#?}", refname, origpos, origlen, &replacement);
+                tree.get_mut(refname).r()?.insert(origpos..origlen, replacement);
                 modseq.extend(replacement_seq);
                 info!(log, "modseq.len()={}", modseq.len());
             }
-            info!(log, "Writing chr {}, {} bases", chr, modseq.len());
-            outfasta.write(chr, None, &modseq)?;
-            newref.insert(chr.clone(), modseq);
+            info!(log, "Writing refname {}, {} bases", refname, modseq.len());
+            outfasta.write(refname, None, &modseq)?;
+            modrefseqs.insert(refname.clone(), modseq);
         }
 
         // fill in newly spliced in genomic regions using random samples of existing read pairs
         let mut record_buffer = Vec::<[Option<Record>; 2]>::new();
-        // for each chr
-        for (chr, splices) in &mut splices {
-            info!(log, "Filling in regions and writing FASTQ records for chr {}", chr);
+        // for each refname
+        for (refname, splices) in &mut splices {
+            info!(log, "Filling in regions and writing FASTQ records for refname {}", refname);
             let mut modpos = 0; // position in modified genome
             let mut origpos = 0; // position in original genome
-            let origlen = origseqs[chr].len() as i64; // reference length in original genome
+            let origlen = origrefseqs[refname].len() as i64; // reference length in original genome
 
             // iterate through each splice record
             for splice in splices.iter() {
@@ -436,14 +440,14 @@ fn main() -> Result<()> {
                     origpos = splice.start;
                 }
                 if splice.stop - splice.start < splice.replacement.len() as i64 {
-                    let tid = header.tid(chr.as_bytes()).r()?;
-                    info!(log, "Filling in region: {}:{}..{}", chr, splice.start, splice.stop);
+                    let tid = header.tid(refname.as_bytes()).r()?;
+                    info!(log, "Filling in region: {}:{}..{}", refname, splice.start, splice.stop);
 
                     // fill up a sample histogram using -1000..1000 bp window around the area of insertion
                     // from the original genome
                     let sample_region_beg = std::cmp::max(0, origpos - sample_distance) as u64;
                     let sample_region_end = std::cmp::min(origlen, origpos + sample_distance) as u64;
-                    info!(log, "Building sample region: {}:{}..{}", chr, sample_region_beg, sample_region_end);
+                    info!(log, "Building sample region: {}:{}..{}", refname, sample_region_beg, sample_region_end);
                     let mut sample_region_histo = vec![0u32; (sample_region_end - sample_region_beg) as usize];
                     indexed_bam.fetch(tid, sample_region_beg, sample_region_end)?;
                     for pileup in indexed_bam.pileup() {
@@ -451,7 +455,7 @@ fn main() -> Result<()> {
                         let sr_pos = pileup.pos() as i64 - sample_region_beg as i64;
                         if 0 <= sr_pos && sr_pos < sample_region_histo.len() as i64
                         {
-                            sample_region_histo[(pileup.pos() - sample_region_beg as u32) as usize] = pileup.depth();
+                            sample_region_histo[sr_pos as usize] = pileup.depth();
                         }
                     }
 
@@ -466,7 +470,7 @@ fn main() -> Result<()> {
                         // find a random depth value from the sample region
                         let sr_i = rng.gen_range(0, sample_region_histo.len());
                         let sr_depth = sample_region_histo[sr_i];
-                        // now fill the current fill_region base up to at least srh_depth
+                        // now fill the current fill_region base up to at least sr_depth
                         'FILL_REGION_HISTO:
                         while fill_region_histo[fr_i as usize] < sr_depth as u64 {
                             let reads = read_pair.read_pair()?;
@@ -494,37 +498,35 @@ fn main() -> Result<()> {
                                 }
                             }
                             let mut fastq_records: [Option<fastq::Record>; 2] = [None, None];
-                            let mut fill_offset=0;
                             if longest_block_r >= 0 && longest_block_b >= 0 {
                                 let longest_block = blocks[longest_block_r as usize].as_ref().r()?[longest_block_b as usize];
                                 let longest_block_len = longest_block[1] - longest_block[0];
-                                fill_offset = (longest_block[0] + (longest_block_len / 2)) +
-                                    (fill_region_len / 2);
 
-                                // skip read pairs not on the same chr or where after translating the positions
+                                // skip read pairs not on the same refname or where after translating the positions
                                 // either read would go past the edge of genome space
                                 for (r, record) in reads.iter().enumerate() {
                                     if let Some(record) = record {
                                         let fprime = if record.is_reverse() { record.reference_end() } else { record.pos() };
-                                        let oldrefname = utf8(header.target_names().get(record.tid() as usize).r()?)?;
-                                        let origseq = origseqs.get(oldrefname).r()?;
-                                        let newrefname = utf8(header.target_names().get(reads[longest_block_r as usize].as_ref().r()?.tid() as usize).r()?)?;
-                                        let newrefseq = newref.get(newrefname).r()?;
+                                        let origrefname = utf8(header.target_names().get(record.tid() as usize).r()?)?;
+                                        let origseq = origrefseqs.get(origrefname).r()?;
+                                        let modrefname = utf8(header.target_names().get(reads[longest_block_r as usize].as_ref().r()?.tid() as usize).r()?)?;
+                                        let modseq = modrefseqs.get(modrefname).r()?;
+
                                         if !record.is_unmapped() {
                                             let record_tid = record.tid();
                                             let longest_tid = reads[longest_block_r as usize].as_ref().r()?.tid();
-                                            // if mapped read is on the same chr as the longest block's read
+                                            // if mapped read is on the same refname as the longest block's read
                                             // it gets translated to the modified genome without
                                             // needing the tree lookup
                                             if record_tid == longest_tid {
-                                                let block_start = blocks[r].as_ref().r()?[0][0] - fill_offset + fill_region_pos;
-                                                let block_end = blocks[r].as_ref().r()?.last().r()?[1]-fill_offset+fill_region_pos;
-                                                let seq_len = newref[utf8(header.target_names()[record.tid() as usize])?].len();
-                                                if block_start < 0 || block_end > seq_len as i64 {
+                                                let modrecstart = (fill_region_pos+fr_i)-((longest_block[0]+(longest_block_len/2))-record.pos());
+                                                let modrecend = modrecstart+(record.reference_end()-record.pos());
+                                                let seq_len = modrefseqs[utf8(header.target_names()[record.tid() as usize])?].len();
+                                                if modrecstart < 0 || modrecend > seq_len as i64 {
                                                     record_buffer.push(reads);
                                                     continue 'FILL_REGION_HISTO
                                                 }
-                                                let seq = fillin_aligned_pairs(record, -fill_offset+fill_region_pos, origseq, newrefseq);
+                                                let seq = fillin_aligned_pairs(record, modrecstart, origseq, modseq);
                                                 let fastq_record = fastq::Record::with_attrs(
                                                     utf8(record.qname())?,
                                                     None,
@@ -538,9 +540,10 @@ fn main() -> Result<()> {
                                             else {
                                                 // make sure the other read's new 5' end maps to the new
                                                 let mut found_entry = false;
-                                                for entry in tree.get(oldrefname).r()?.find(fprime..fprime + 1) {
+                                                for entry in tree.get(origrefname).r()?.find(fprime..fprime + 1) {
                                                     let replacement = entry.data();
-                                                    let seq = fillin_aligned_pairs(record, replacement.offset, origseq, newrefseq);
+                                                    let modpos = record.pos()-replacement.origpos+replacement.modpos;
+                                                    let seq = fillin_aligned_pairs(record, modpos, origseq, modseq);
                                                     let fastq_record = fastq::Record::with_attrs(
                                                         utf8(record.qname())?,
                                                         None,
@@ -584,6 +587,7 @@ fn main() -> Result<()> {
                                     }
                                 }
                             }
+
                             if let Some(read1) = &fastq_records[0] {
                                 // fill in histogram
                                 for (r, record) in reads.iter().enumerate() {
@@ -593,8 +597,8 @@ fn main() -> Result<()> {
                                             record.tid() == reads[longest_block_r as usize].as_ref().r()?.tid()
                                         {
                                             for block in blocks[r].as_ref().r()?.iter() {
-                                                let fill_start = block[0] - fill_offset;
-                                                let fill_end = block[1] - fill_offset;
+                                                let fill_start = fr_i-(block[0]-record.pos());
+                                                let fill_end = fr_i-(block[1]-record.pos());
                                                 // fill in the fillin_region_histo with the blocks
                                                 for i in std::cmp::max(0, fill_start)..
                                                     std::cmp::min(fill_region_len, fill_end)
@@ -636,18 +640,20 @@ fn main() -> Result<()> {
             if reads[0].is_none() && reads[1].is_none() && record_buffer.is_empty() {
                 break 'READ_PAIR;
             }
+
             let mut fastq_records: [Option<fastq::Record>; 2] = [None, None];
             for (r, record) in reads.iter().enumerate() {
                 if let Some(record) = record {
                     if !record.is_unmapped() {
                         let fprime = if record.is_reverse() { record.reference_end() } else { record.pos() };
                         let refname = utf8(header.target_names().get(record.tid() as usize).r()?)?;
-                        let origseq = origseqs.get(refname).r()?;
-                        let modseq = newref.get(refname).r()?;
+                        let origseq = origrefseqs.get(refname).r()?;
+                        let modseq = modrefseqs.get(refname).r()?;
                         let mut found_entry = false;
                         for entry in tree.get(refname).r()?.find(fprime..fprime + 1) {
                             let replacement = entry.data();
-                            let seq = fillin_aligned_pairs(record, replacement.offset, origseq, modseq);
+                            let modpos = record.pos()-replacement.origpos+replacement.modpos;
+                            let seq = fillin_aligned_pairs(record, modpos, origseq, modseq);
                             let fastq_record = fastq::Record::with_attrs(
                                 utf8(record.qname())?,
                                 None,
@@ -663,6 +669,7 @@ fn main() -> Result<()> {
                             continue 'READ_PAIR;
                         }
                     }
+                    // unmapped reads get passed through unchanged
                     else {
                         let fastq_record = fastq::Record::with_attrs(
                            utf8(record.qname())?,
