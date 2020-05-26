@@ -130,13 +130,16 @@ struct ReadPair {
 
 impl ReadPair {
     fn from_bamfile(collated_bamfile: &str) -> Result<ReadPair> {
-        let collated_bam = bam::Reader::from_path(&collated_bamfile)?;
+        let mut collated_bam = bam::Reader::from_path(&collated_bamfile)?;
+        let mut record = bam::Record::new();
+        collated_bam.read(&mut record)?;
+        let read_qname = Vec::from(record.qname());
         Ok(ReadPair {
             collated_bamfile: collated_bamfile.to_string(),
             collated_bam,
             is_paired: true,
-            record: bam::Record::new(),
-            read_qname: Vec::new(),
+            record,
+            read_qname,
             eof: false,
         })
     }
