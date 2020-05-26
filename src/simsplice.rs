@@ -137,7 +137,7 @@ impl ReadPair {
         Ok(ReadPair {
             collated_bamfile: collated_bamfile.to_string(),
             collated_bam,
-            is_paired: true,
+            is_paired: false,
             record,
             read_qname,
             eof: false,
