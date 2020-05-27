@@ -599,9 +599,12 @@ fn main() -> Result<()> {
                                             longest_block_r >= 0 && longest_block_b >= 0 &&
                                             record.tid() == reads[longest_block_r as usize].as_ref().r()?.tid()
                                         {
+                                            let longest_block = blocks[longest_block_r as usize].as_ref().r()?[longest_block_b as usize];
+                                            let longest_block_len = longest_block[1] - longest_block[0];
+                                            let modrecstart = fr_i-((longest_block[0]+(longest_block_len/2))-record.pos());
                                             for block in blocks[r].as_ref().r()?.iter() {
-                                                let fill_start = fr_i-(block[0]-record.pos());
-                                                let fill_end = fr_i-(block[1]-record.pos());
+                                                let fill_start = modrecstart+(block[0]-record.pos());
+                                                let fill_end = fill_start+(block[1]-block[0]);
                                                 // fill in the fillin_region_histo with the blocks
                                                 for i in std::cmp::max(0, fill_start)..
                                                     std::cmp::min(fill_region_len, fill_end)
