@@ -19,7 +19,7 @@ use rust_htslib::bcf;
 use rust_htslib::bcf::Format;
 use std::str::{from_utf8 as utf8};
 
-use eyre::eyre;
+use eyre::{eyre, bail};
 pub type Report = eyre::Report<color_eyre::Context>;
 pub type Result<T, E = Report> = core::result::Result<T, E>;
 trait ToResult<T> {
@@ -113,7 +113,7 @@ fn main() -> Result<()> {
     info!(log, "Validating options");
     let total_prob = options.prob_insert + options.prob_delete + options.prob_splice;
     if total_prob == 0.0 {
-        Err(eyre!("prob-insert, prob-delete and prob-splice sum to zero!"))?;
+        bail!("prob-insert, prob-delete and prob-splice sum to zero!");
     }
 
     let delete_range: Vec<Range<i64>> = re!(r"^([0-9]+)(-|\.\.)([0-9]+)$").captures(&options.delete_range).
@@ -128,7 +128,7 @@ fn main() -> Result<()> {
         eyre!("Insert range could not be parsed: {}", &options.insert_range)
     )?;
     if options.num_modifications.is_some() && !options.modifications.is_empty() {
-        Err(eyre!("Specifying both num-modifications and modifications is disallowed"))?;
+        bail!("Specifying both num-modifications and modifications is disallowed");
     }
     let modifications = (0..options.num_modifications.unwrap_or(0)).map(|_| "".to_string()).collect::<Vec<_>>();
     let mut splices = BTreeSet::<Splice>::new();
@@ -162,7 +162,7 @@ fn main() -> Result<()> {
                     min_len <= reference[n.as_str()].len() as i64
                 }).map(|c| c.as_str()).collect::<Vec<_>>();
                 if chrs.is_empty() {
-                    Err(eyre!("Could not create modification: {}: No suitable refseqs found", m))?;
+                    bail!("Could not create modification: {}: No suitable refseqs found", m);
                 }
                 let chr = match chr {
                     Some(chr) => chr,
@@ -217,7 +217,7 @@ fn main() -> Result<()> {
         info!(log, "Writing record for splice: {:?}", splice);
         if let Some(lastsplice) = &lastsplice {
             if lastsplice.chr == splice.chr && splice.start < lastsplice.end {
-                Err(eyre!("Overlapping modifications found, cannot continue: {:?}: {:?}", &splice, &lastsplice))?;
+                bail!("Overlapping modifications found, cannot continue: {:?}: {:?}", &splice, &lastsplice);
             }
         }
         lastsplice = Some(&splice);
