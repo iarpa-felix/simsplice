@@ -25,6 +25,7 @@ shell-words = "*"
 flate2 = "*"
 maplit = "*"
 linked-hash-map = "*"
+bigtools = "*"
 
 [[bin]]
 name = "simsplice"
