@@ -402,6 +402,9 @@ fn main() -> Result<()> {
                     let tid = header.tid(refname.as_bytes()).r()?;
                     info!(log, "Filling in region: {}:{}..{}", refname, splice.start, splice.stop);
 
+                    origpos = splice.stop;
+                    modpos += splice.stop-splice.start;
+
                     // fill up a sample histogram using -1000..1000 bp window around the area of insertion
                     // from the original genome
                     let sample_region_beg = std::cmp::max(0, origpos - sample_distance) as u64;
@@ -431,10 +434,32 @@ fn main() -> Result<()> {
                     for fr_i in 0..fill_region_len {
                         // find a random depth value from the sample region
                         let sr_i = rng.gen_range(0, sample_region_histo.len());
-                        let sr_depth = sample_region_histo[sr_i];
-                        // now fill the current fill_region base up to at least sr_depth
+                        let sr_depth = &sample_region_histo[sr_i];
+
+                        // let left_edge be the index of the last site 5' to the insertion
+                        let left_edge = std::cmp::min(sample_region_histo.len() as i64,
+                                                      std::cmp::max(0i64, origpos - sample_region_beg as i64));
+                        // let right_edge be the index of the first site 3' to the insertion
+                        let right_edge = std::cmp::min(sample_region_histo.len() as i64,
+                                                      std::cmp::max(0i64, left_edge+1));
+                        //
+                        // then let the value at the ith position of the insertion be computed as follows:
+                        //
+                        // Let N = length( insertion )
+                        // if i < N / 2:
+                        //     alpha = ( N - i + 1 ) / N
+                        //     value_at_position_i  = ( alpha * value_at_left_edge + (1-alpha) * current_value_at_pos_i ) / 2
+                        // And similarly for right_edge if i >= N/2
+                        let alpha = sr_i as f64  / sample_region_histo.len() as f64;
+                        let value_at_sr_i = if sr_i < sample_region_histo.len()/2 {
+                            ((1.0-alpha) * sample_region_histo[left_edge as usize] as f64 + alpha*(*sr_depth) as f64) as i64
+                        } else {
+                            (alpha * sample_region_histo[right_edge as usize] as f64 + (1.0-alpha)*(*sr_depth) as f64) as i64
+                        };
+
+                        // now fill the current fill_region base up to at least value_at_sr_i
                         'FILL_REGION_HISTO:
-                        while fill_region_histo[fr_i as usize] < sr_depth as u64 {
+                        while fill_region_histo[fr_i as usize] < value_at_sr_i as u64 {
                             let reads = read_pair.read_pair()?;
                             if reads[0].is_none() && reads[1].is_none() { break 'FILL_REGION }
 
@@ -549,7 +574,7 @@ fn main() -> Result<()> {
                         }
                     }
                 }
-                modpos += splice.replacement.len() as i64;
+                modpos += splice.replacement.len() as i64-(splice.stop-splice.start);
                 origpos = splice.stop;
             }
         }
