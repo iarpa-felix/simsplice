@@ -438,7 +438,7 @@ fn main() -> Result<()> {
 
                         // now fill the current fill_region base up to at least value_at_sr_i
                         'FILL_REGION_HISTO:
-                        while fill_region_histo[fr_i as usize] < sr_depth as u64 {
+                        while fill_region_histo[fr_i as usize] < *sr_depth as u64 {
                             let reads = read_pair.read_pair()?;
                             if reads[0].is_none() && reads[1].is_none() { break 'FILL_REGION }
 
