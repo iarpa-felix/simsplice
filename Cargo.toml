@@ -34,3 +34,6 @@ path = "src/simsplice.rs"
 [[bin]]
 name = "genvcf"
 path = "src/genvcf.rs"
+
+[profile.dev]
+opt-level = 2

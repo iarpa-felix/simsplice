@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:experimental
-FROM boss:6000/archdev as git
+FROM bdgp/archdev as git
 
 RUN pacman -Sy --noconfirm --needed llvm llvm-libs clang libffi git openssh && pacman -Sc --noconfirm ||true
 
@@ -16,9 +16,9 @@ RUN --mount=type=ssh cd /root && \
 git clone -q "git@gitlab.com:bdgp/simsplice.git" && \
 cd simsplice && \
 source $HOME/.cargo/env && \
-cargo build --release
+cargo build
 
-FROM boss:6000/archdev as install
+FROM bdgp/archdev as install
 
 RUN --mount=type=bind,target=/root/simsplice,source=/root/simsplice,from=git,rw \
-cp -v /root/simsplice/target/release/{simsplice,genvcf} /usr/bin
+cp -v /root/simsplice/target/debug/{simsplice,genvcf} /root/simsplice/*.sh /usr/bin
