@@ -26,6 +26,8 @@ flate2 = "*"
 maplit = "*"
 linked-hash-map = "*"
 bigtools = "*"
+uuid = { version = "*", features = ["serde", "v4"] }
+
 
 [[bin]]
 name = "simsplice"

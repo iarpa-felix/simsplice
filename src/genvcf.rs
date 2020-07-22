@@ -16,8 +16,11 @@ use std::ops::Range;
 
 use rand::distributions::Distribution;
 use rust_htslib::bcf;
-use rust_htslib::bcf::Format;
+use rust_htslib::bcf::{Format, Read};
 use std::str::{from_utf8 as utf8};
+use bio::io::gff::GffType;
+use bio::data_structures::interval_tree::IntervalTree;
+use uuid::Uuid;
 
 use eyre::{eyre, bail};
 pub type Report = eyre::Report<color_eyre::Context>;
@@ -66,8 +69,18 @@ struct Options {
     insert_range: String,
     #[structopt(short="n", long="num-modifications", help = "The number of modification to make", name="NUM")]
     num_modifications: Option<u64>,
-    #[structopt(short="m", long="modifications", help = "Specify modifications. A series of chromosome choordinate/ranges:lengths. Examples: chr1:10000, chr1:1000-2000, chr1:1000-2000:400", name="MODIFICATOINS", default_value="1")]
+    #[structopt(short="m", long="modifications", help = "Specify modifications. A series of chromosome choordinate/ranges:lengths. Examples: chr1:10000, chr1:1000-2000, chr1:1000-2000:400", name="MODIFICATIONS")]
     modifications: Vec<String>,
+    #[structopt(short="g", long="gff-include", help = "GFF file where any modifications must overlap one of its features to be included", name="GFF_INCLUDE")]
+    gff_include: Vec<String>,
+    #[structopt(short="G", long="gff-exclude", help = "GFF file where any modifications must *NOT* overlap one of its features to be included", name="GFF_EXCLUDE")]
+    gff_exclude: Vec<String>,
+    #[structopt(short="b", long="bed-include", help = "BED file where any modifications must overlap one of its features to be included", name="BED_INCLUDE")]
+    bed_include: Vec<String>,
+    #[structopt(short="B", long="bed-exclude", help = "BED file where any modifications must *NOT* overlap one of its features to be included", name="BED_EXCLUDE")]
+    bed_exclude: Vec<String>,
+    #[structopt(short="a", long="append", help = "Append to the VCF file? Default is to overwrite an existing VCF file.")]
+    append: bool,
 }
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone)]
@@ -102,18 +115,72 @@ fn main() -> Result<()> {
     info!(log, "Reading reference file {}", &options.reference);
     let mut reference = LinkedHashMap::<String,Vec<u8>>::new();
     let fasta = fasta::Reader::from_file(&options.reference)?;
-    for r in fasta.records() {
+    let mut refids = HashMap::new();
+    for (i,r) in fasta.records().enumerate() {
         let r = r?;
         reference.insert(String::from(r.id()), Vec::from(r.seq()));
+        refids.insert(String::from(r.id()), i);
     }
-    let refids = reference.keys().enumerate().
-        map(|(i,n)| (n.as_str(), i)).collect::<HashMap<_,_>>();
 
     // validate options
     info!(log, "Validating options");
     let total_prob = options.prob_insert + options.prob_delete + options.prob_splice;
     if total_prob == 0.0 {
         bail!("prob-insert, prob-delete and prob-splice sum to zero!");
+    }
+
+    let mut include_tree = LinkedHashMap::<String,IntervalTree<u64,bool>>::new();
+    for gff in &options.gff_include {
+        let lower = gff.to_ascii_lowercase();
+        let gfftype = if lower.ends_with(".gtf") { GffType::GTF2 }
+        else if lower.ends_with(".gff2") { GffType::GFF2 }
+        else { GffType::GFF3 };
+        let mut gff_file = bio::io::gff::Reader::from_file(gff, gfftype)?;
+        for record in &mut gff_file.records() {
+            let record = record?;
+            if !include_tree.contains_key(record.seqname()) {
+                include_tree.insert(record.seqname().to_string(), IntervalTree::new());
+            }
+            include_tree[record.seqname()].insert(record.start()-1..*record.end(), true);
+
+        }
+    }
+    for bed in &options.bed_include {
+        let mut bed_file = bio::io::bed::Reader::from_file(bed)?;
+        for record in &mut bed_file.records() {
+            let record = record?;
+            if !include_tree.contains_key(record.chrom()) {
+                include_tree.insert(record.chrom().to_string(), IntervalTree::new());
+            }
+            include_tree[record.chrom()].insert(record.start()..record.end(), true);
+        }
+    }
+
+    let mut exclude_tree = LinkedHashMap::<String,IntervalTree<u64,bool>>::new();
+    for gff in &options.gff_exclude {
+        let lower = gff.to_ascii_lowercase();
+        let gfftype = if lower.ends_with(".gtf") { GffType::GTF2 }
+        else if lower.ends_with(".gff2") { GffType::GFF2 }
+        else { GffType::GFF3 };
+        let mut gff_file = bio::io::gff::Reader::from_file(gff, gfftype)?;
+        for record in &mut gff_file.records() {
+            let record = record?;
+            if !exclude_tree.contains_key(record.seqname()) {
+                exclude_tree.insert(record.seqname().to_string(), IntervalTree::new());
+            }
+            exclude_tree[record.seqname()].insert(record.start()-1..*record.end(), true);
+
+        }
+    }
+    for bed in &options.bed_exclude {
+        let mut bed_file = bio::io::bed::Reader::from_file(bed)?;
+        for record in &mut bed_file.records() {
+            let record = record?;
+            if !exclude_tree.contains_key(record.chrom()) {
+                exclude_tree.insert(record.chrom().to_string(), IntervalTree::new());
+            }
+            exclude_tree[record.chrom()].insert(record.start()..record.end(), true);
+        }
     }
 
     let delete_range: Vec<Range<i64>> = re!(r"^([0-9]+)(-|\.\.)([0-9]+)$").captures(&options.delete_range).
@@ -147,61 +214,101 @@ fn main() -> Result<()> {
                 let replace = c.name("replace").map(|r| r.as_str());
                 info!(log, "Parsed chr={:?}, start={:?}, end={:?}, replace={:?}", &chr, &start, &end, &replace);
 
-                let mod_type = [
-                    (&ModType::Insert, &options.prob_insert),
-                    (&ModType::Delete, &options.prob_delete),
-                    (&ModType::Splice, &options.prob_splice),
-                ].choose_weighted(&mut rng, |t| t.1)?.0;
-                info!(log, "Selected modification type: {:?}", &mod_type);
+                let mut add_splice = false;
+                let mut splice = None;
+                let mut retries = 0;
+                const MAX_RETRIES: i32 = 100;
+                while !add_splice && retries < MAX_RETRIES {
+                    let mod_type = [
+                        (&ModType::Insert, &options.prob_insert),
+                        (&ModType::Delete, &options.prob_delete),
+                        (&ModType::Splice, &options.prob_splice),
+                    ].choose_weighted(&mut rng, |t| t.1)?.0;
+                    info!(log, "Selected modification type: {:?}", &mod_type);
 
-                let chrs = reference.keys().filter(|n| {
-                    let min_len = if let (Some(start), Some(end)) = (start, end) {end-start}
-                        else if let Some(end)=end {end}
-                    else if let Some(start)=start {start+delete_range.start}
-                    else {delete_range.start};
-                    min_len <= reference[n.as_str()].len() as i64
-                }).map(|c| c.as_str()).collect::<Vec<_>>();
-                if chrs.is_empty() {
-                    bail!("Could not create modification: {}: No suitable refseqs found", m);
-                }
-                let chr = match chr {
-                    Some(chr) => chr,
-                    None => chrs.choose_weighted(&mut rng, |c| reference[*c].len())?,
-                };
-                info!(log, "Using chr: {}", &chr);
-                let start = match start {
-                    Some(start) => start,
-                    None => rng.gen_range(0, reference[chr].len() as i64 - delete_range.start),
-                };
-                info!(log, "Using start: {}", &start);
-                let end = match end {
-                    Some(end) => end,
-                    None => if *mod_type == ModType::Insert { start }
-                    else {
-                        rng.gen_range(start+delete_range.start, reference[chr].len() as i64)
-                    },
-                };
-                info!(log, "Using end: {}", &end);
-                let replace = match replace {
-                    Some(replace) => match replace.parse::<usize>() {
-                        Ok(num_replace) => rng.sample_iter(&Nucleotide).take(num_replace).collect::<Vec<u8>>(),
-                        Err(_) => replace.as_bytes().to_vec(),
+                    let mut chrs = Vec::new();
+                    for (k,_) in &reference {
+                        let min_len = if let (Some(start), Some(end)) = (start, end) {end-start}
+                            else if let Some(end)=end {end}
+                            else if let Some(start)=start {start+delete_range.start}
+                            else {delete_range.start};
+                        if min_len <= reference[k.as_str()].len() as i64 {
+                            chrs.push(k.as_str());
+                        }
                     }
-                    None => if *mod_type == ModType::Delete { vec![] }
-                    else {
-                        let num_replace = rng.gen_range(insert_range.start, insert_range.end);
-                        rng.sample_iter(&Nucleotide).take(num_replace as usize).collect::<Vec<u8>>()
-                    },
-                };
-                info!(log, "Using replacement: {}", utf8(&replace)?);
-                Ok(Splice {
-                    chr: chr.to_string(),
-                    start,
-                    end,
-                    replacement: String::from(utf8(&replace)?),
-                })
-            }).collect::<Result<Vec<Splice>>>()?;
-        splices.extend(splice);
+                    if chrs.is_empty() {
+                        bail!("Could not create modification: {}: No suitable refseqs found", m);
+                    }
+                    let chr = match chr {
+                        Some(chr) => chr,
+                        None => chrs.choose_weighted(&mut rng, |c| reference[*c].len())?,
+                    };
+                    info!(log, "Using chr: {}", &chr);
+                    let start = match start {
+                        Some(start) => start,
+                        None => rng.gen_range(0, reference[chr].len() as i64 - delete_range.start),
+                    };
+                    info!(log, "Using start: {}", &start);
+                    let end = match end {
+                        Some(end) => end,
+                        None => if *mod_type == ModType::Insert { start }
+                        else {
+                            rng.gen_range(start+delete_range.start, reference[chr].len() as i64)
+                        },
+                    };
+                    info!(log, "Using end: {}", &end);
+                    let replace = match replace {
+                        Some(replace) => match replace.parse::<usize>() {
+                            Ok(num_replace) => rng.sample_iter(&Nucleotide).take(num_replace).collect::<Vec<u8>>(),
+                            Err(_) => replace.as_bytes().to_vec(),
+                        }
+                        None => if *mod_type == ModType::Delete { vec![] }
+                        else {
+                            let num_replace = rng.gen_range(insert_range.start, insert_range.end);
+                            rng.sample_iter(&Nucleotide).take(num_replace as usize).collect::<Vec<u8>>()
+                        },
+                    };
+                    info!(log, "Using replacement: {}", utf8(&replace)?);
+                    splice = Some(Splice {
+                        chr: chr.to_string(),
+                        start,
+                        end,
+                        replacement: String::from(utf8(&replace)?),
+                    });
+                    add_splice = true;
+                    if !include_tree.is_empty() {
+                        add_splice = false;
+                        if let Some(tree) = include_tree.get(chr) {
+                            for _ in tree.find((start as u64)..(end as u64)) {
+                                add_splice = true;
+                                break
+                            }
+                        }
+                        if !add_splice {
+                            info!(log, "splice {:?} matched no include features, retrying splice generation", splice);
+                        }
+                    }
+                    if !exclude_tree.is_empty() {
+                        if let Some(tree) = exclude_tree.get(chr) {
+                            for feature in tree.find((start as u64)..(end as u64)) {
+                                add_splice = false;
+                                info!(log, "splice {:?} matched exclude feature {:?}, retrying splice generation", splice, feature);
+                                break
+                            }
+                        }
+                    }
+                    retries += 1;
+                }
+                if retries == MAX_RETRIES {
+                    info!(log, "Reached {} retries, skipping splice {:?}", retries, splice);
+                }
+                Ok(splice)
+            }).collect::<Result<Vec<Option<Splice>>>>()?;
+        for splice in splice {
+            if let Some(splice) = splice {
+                splices.insert(splice);
+            }
+        }
     }
 
     let mut header = bcf::header::Header::new();
@@ -210,8 +317,17 @@ fn main() -> Result<()> {
         info!(log, "Wrote header line: {}", header_line);
         header.push_record(header_line.as_bytes());
     }
+    let uuid = Uuid::new_v4();
+    let vcffile = format!("{}.{}.tmp", &options.vcffile, uuid);
     info!(log, "Writing VCF file: {}", &options.vcffile);
-    let mut vcf = bcf::Writer::from_path(&options.vcffile, &header, true, Format::VCF)?;
+    let mut vcf = bcf::Writer::from_path(&vcffile, &header, true, Format::VCF)?;
+    if options.append {
+        let mut read_vcf = bcf::Reader::from_path(&options.vcffile)?;
+        let mut record = vcf.empty_record();
+        while read_vcf.read(&mut record)? {
+            vcf.write(&record)?
+        }
+    }
     let mut lastsplice: Option<&Splice> = None;
     for splice in &splices {
         info!(log, "Writing record for splice: {:?}", splice);
@@ -248,6 +364,7 @@ fn main() -> Result<()> {
         }
         vcf.write(&record)?;
     }
+    std::fs::rename(&vcffile, &options.vcffile)?;
     Ok(())
 }
 
