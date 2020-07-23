@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:experimental
 FROM bdgp/archdev as git
 
-RUN pacman -Sy --noconfirm --needed llvm llvm-libs clang libffi git openssh && pacman -Sc --noconfirm ||true
+USER bdgp
+RUN yay -Sy --noconfirm --needed llvm llvm-libs clang libffi git openssh && yay -Sc --noconfirm ||true
+USER root
 
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y && \
 source $HOME/.cargo/env && \
@@ -19,6 +21,10 @@ source $HOME/.cargo/env && \
 cargo build
 
 FROM bdgp/archdev as install
+
+USER bdgp
+RUN yay -Sy --noconfirm --needed samtools bcftools && yay -Sc --noconfirm ||true
+USER root
 
 RUN --mount=type=bind,target=/root/simsplice,source=/root/simsplice,from=git,rw \
 cp -v /root/simsplice/target/debug/{simsplice,genvcf} /root/simsplice/*.sh /usr/bin

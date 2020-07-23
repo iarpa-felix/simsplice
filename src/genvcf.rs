@@ -183,6 +183,30 @@ fn main() -> Result<()> {
         }
     }
 
+    let mut header = bcf::header::Header::new();
+    for (name, seq) in &reference {
+        let header_line = format!("##contig=<ID={},length={}>", name, seq.len());
+        info!(log, "Wrote header line: {}", header_line);
+        header.push_record(header_line.as_bytes());
+    }
+    let uuid = Uuid::new_v4();
+    let vcffile = format!("{}.{}.tmp", &options.vcffile, uuid);
+    info!(log, "Writing VCF file: {}", &options.vcffile);
+    let mut vcf = bcf::Writer::from_path(&vcffile, &header, true, Format::VCF)?;
+    if options.append {
+        let mut read_vcf = bcf::Reader::from_path(&options.vcffile)?;
+        let mut record = vcf.empty_record();
+        while read_vcf.read(&mut record)? {
+            vcf.write(&record)?;
+
+            let contig = std::str::from_utf8(read_vcf.header().rid2name(record.rid().r()?)?)?;
+            if !exclude_tree.contains_key(contig) {
+                exclude_tree.insert(contig.to_string(), IntervalTree::new());
+            }
+            exclude_tree[contig].insert(record.pos() as u64..record.pos() as u64+record.alleles()[0].len() as u64, true);
+        }
+    }
+
     let delete_range: Vec<Range<i64>> = re!(r"^([0-9]+)(-|\.\.)([0-9]+)$").captures(&options.delete_range).
         iter().map(|c| Ok((c[1].parse::<i64>()?)..(c[3].parse::<i64>()?))).collect::<Result<Vec<_>>>()?;
     let delete_range = delete_range.first().ok_or_else(||
@@ -246,15 +270,21 @@ fn main() -> Result<()> {
                     info!(log, "Using chr: {}", &chr);
                     let start = match start {
                         Some(start) => start,
-                        None => rng.gen_range(0, reference[chr].len() as i64 - delete_range.start),
+                        None => rng.gen_range(0,
+                                              std::cmp::max(
+                                                  0,
+                                                  reference[chr].len() as i64 - delete_range.start)),
                     };
                     info!(log, "Using start: {}", &start);
                     let end = match end {
                         Some(end) => end,
                         None => if *mod_type == ModType::Insert { start }
-                        else {
-                            rng.gen_range(start+delete_range.start, reference[chr].len() as i64)
-                        },
+                            else {
+                                rng.gen_range(start+delete_range.start,
+                                              std::cmp::min(
+                                                  reference[chr].len(),
+                                                  start as usize+delete_range.end as usize) as i64)
+                            },
                     };
                     info!(log, "Using end: {}", &end);
                     let replace = match replace {
@@ -302,6 +332,12 @@ fn main() -> Result<()> {
                 if retries == MAX_RETRIES {
                     info!(log, "Reached {} retries, skipping splice {:?}", retries, splice);
                 }
+                if let Some(splice) = &splice {
+                    if !exclude_tree.contains_key(&splice.chr) {
+                        exclude_tree.insert(splice.chr.clone(), IntervalTree::new());
+                    }
+                    exclude_tree[&splice.chr].insert(splice.start as u64..splice.end as u64, true);
+                }
                 Ok(splice)
             }).collect::<Result<Vec<Option<Splice>>>>()?;
         for splice in splice {
@@ -311,32 +347,8 @@ fn main() -> Result<()> {
         }
     }
 
-    let mut header = bcf::header::Header::new();
-    for (name, seq) in &reference {
-        let header_line = format!("##contig=<ID={},length={}>", name, seq.len());
-        info!(log, "Wrote header line: {}", header_line);
-        header.push_record(header_line.as_bytes());
-    }
-    let uuid = Uuid::new_v4();
-    let vcffile = format!("{}.{}.tmp", &options.vcffile, uuid);
-    info!(log, "Writing VCF file: {}", &options.vcffile);
-    let mut vcf = bcf::Writer::from_path(&vcffile, &header, true, Format::VCF)?;
-    if options.append {
-        let mut read_vcf = bcf::Reader::from_path(&options.vcffile)?;
-        let mut record = vcf.empty_record();
-        while read_vcf.read(&mut record)? {
-            vcf.write(&record)?
-        }
-    }
-    let mut lastsplice: Option<&Splice> = None;
     for splice in &splices {
         info!(log, "Writing record for splice: {:?}", splice);
-        if let Some(lastsplice) = &lastsplice {
-            if lastsplice.chr == splice.chr && splice.start < lastsplice.end {
-                bail!("Overlapping modifications found, cannot continue: {:?}: {:?}", &splice, &lastsplice);
-            }
-        }
-        lastsplice = Some(&splice);
 
         let mut record = vcf.empty_record();
         let rid = refids[splice.chr.as_str()] as u32;
