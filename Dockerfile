@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:experimental
 FROM bdgp/archdev as git
 
-RUN pacman -Sy --noconfirm --needed llvm llvm-libs clang libffi git openssh && pacman -Sc --noconfirm ||true
+USER bdgp
+RUN yay -Sy --noconfirm --needed llvm llvm-libs clang libffi git openssh samtools bcftools && yay -Sc --noconfirm ||true
+USER root
 
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y && \
 source $HOME/.cargo/env && \
