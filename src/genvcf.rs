@@ -199,10 +199,11 @@ fn main() -> Result<()> {
         while read_vcf.read(&mut record)? {
             vcf.write(&record)?;
 
-            if !exclude_tree.contains_key(record.contig()) {
-                exclude_tree.insert(record.contig().to_string(), IntervalTree::new());
+            let contig = std::str::from_utf8(read_vcf.header().rid2name(record.rid().r()?)?)?;
+            if !exclude_tree.contains_key(contig) {
+                exclude_tree.insert(contig.to_string(), IntervalTree::new());
             }
-            exclude_tree[record.contig()].insert(record.pos()..record.pos()+record.alleles()[0].len(), true);
+            exclude_tree[contig].insert(record.pos() as u64..record.pos() as u64+record.alleles()[0].len() as u64, true);
         }
     }
 
