@@ -63,9 +63,9 @@ struct Options {
     prob_delete: f64,
     #[structopt(short="s", long="prob-splice", help = "Probability of a splicing event (0.0-1.0)", name="PROB_SPLICE", default_value="0.3")]
     prob_splice: f64,
-    #[structopt(short="D", long="delete-range", help = "Range in bp for deletions", name="DELETE_RANGE", default_value="200-1000")]
+    #[structopt(short="D", long="delete-range", help = "Range in bp for deletions", name="DELETE_RANGE", default_value="10-100")]
     delete_range: String,
-    #[structopt(short="I", long="insert-range", help = "Range in bp for insertions", name="INSERT_RANGE", default_value="200-1000")]
+    #[structopt(short="I", long="insert-range", help = "Range in bp for insertions", name="INSERT_RANGE", default_value="10-100")]
     insert_range: String,
     #[structopt(short="n", long="num-modifications", help = "The number of modification to make", name="NUM")]
     num_modifications: Option<u64>,
