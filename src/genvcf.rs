@@ -246,15 +246,21 @@ fn main() -> Result<()> {
                     info!(log, "Using chr: {}", &chr);
                     let start = match start {
                         Some(start) => start,
-                        None => rng.gen_range(0, reference[chr].len() as i64 - delete_range.start),
+                        None => rng.gen_range(0,
+                                              std::cmp::min(
+                                                  0,
+                                                  reference[chr].len() as i64 - delete_range.start)),
                     };
                     info!(log, "Using start: {}", &start);
                     let end = match end {
                         Some(end) => end,
                         None => if *mod_type == ModType::Insert { start }
-                        else {
-                            rng.gen_range(start+delete_range.start, reference[chr].len() as i64)
-                        },
+                            else {
+                                rng.gen_range(start+delete_range.start,
+                                              std::cmp::min(
+                                                  reference[chr].len(),
+                                                  start as usize+delete_range.end as usize) as i64)
+                            },
                     };
                     info!(log, "Using end: {}", &end);
                     let replace = match replace {
@@ -301,6 +307,12 @@ fn main() -> Result<()> {
                 }
                 if retries == MAX_RETRIES {
                     info!(log, "Reached {} retries, skipping splice {:?}", retries, splice);
+                }
+                if let Some(splice) = &splice {
+                    if !exclude_tree.contains_key(&splice.chr) {
+                        exclude_tree.insert(splice.chr.clone(), IntervalTree::new());
+                    }
+                    exclude_tree[&splice.chr].insert(splice.start as u64..splice.end as u64, true);
                 }
                 Ok(splice)
             }).collect::<Result<Vec<Option<Splice>>>>()?;
