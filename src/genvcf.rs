@@ -247,7 +247,7 @@ fn main() -> Result<()> {
                     let start = match start {
                         Some(start) => start,
                         None => rng.gen_range(0,
-                                              std::cmp::min(
+                                              std::cmp::max(
                                                   0,
                                                   reference[chr].len() as i64 - delete_range.start)),
                     };
