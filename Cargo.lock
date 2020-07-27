@@ -2130,6 +2130,7 @@ version = "1.0.0"
 dependencies = [
  "bigtools",
  "bio",
+ "bio-types",
  "color-eyre",
  "duct",
  "eyre",
