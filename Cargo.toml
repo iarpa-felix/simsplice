@@ -37,5 +37,9 @@ path = "src/simsplice.rs"
 name = "genvcf"
 path = "src/genvcf.rs"
 
+[[bin]]
+name = "liftover"
+path = "src/liftover.rs"
+
 [profile.dev]
 opt-level = 2
