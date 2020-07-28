@@ -97,7 +97,7 @@ fn main() -> Result<()> {
 
     let input = &options.input;
     let lower = input.to_ascii_lowercase();
-    if re!(r"(?i)[.]{gtf,gff,gff3,gff2}$").is_match(input) {
+    if re!(r"(?i)[.](gtf|gff|gff3|gff2)$").is_match(input) {
         let gfftype = if lower.ends_with(".gtf") { GffType::GTF2 }
         else if lower.ends_with(".gff2") { GffType::GFF2 }
         else { GffType::GFF3 };
