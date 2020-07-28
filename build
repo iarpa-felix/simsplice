@@ -6,4 +6,4 @@ token=$(kubectl get secrets/gitlab-docker-k8s --template={{.data.token}} |base64
 project_id=$(kubectl get secrets/gitlab-docker-k8s --template={{.data.simsplice}} |base64 -d || true)
 DOCKER_BUILDKIT=1 docker build --build-arg token="$token" --build-arg project_id="$project_id" --progress plain --ssh default="$SSH_AUTH_SOCK" -t "$dr/$img" "$@" -- "$(dirname "$0")"
 docker push "$dr/$img"
-k8script.py --launcher -i "$dr/$img" sh -c 'echo /usr/bin/simsplice; echo /usr/bin/genvcf'
+k8script.py --launcher -i "$dr/$img" sh -c 'echo /usr/bin/simsplice; echo /usr/bin/genvcf; echo /usr/bin/liftover'

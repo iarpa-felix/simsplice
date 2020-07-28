@@ -27,4 +27,4 @@ RUN yay -Sy --noconfirm --needed samtools bcftools && yay -Sc --noconfirm ||true
 USER root
 
 RUN --mount=type=bind,target=/root/simsplice,source=/root/simsplice,from=git,rw \
-cp -v /root/simsplice/target/debug/{simsplice,genvcf} /root/simsplice/*.sh /usr/bin
+cp -v /root/simsplice/target/debug/{simsplice,genvcf,liftover} /root/simsplice/*.sh /usr/bin
