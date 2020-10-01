@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -eux -o pipefail
-dr=${DOCKER_REGISTRY:-bdgp}
+dr=${DOCKER_REGISTRY:-fiji.lbl.gov/bdgp}
 img=${DOCKER_IMAGE:-$(basename "$(cd "$(dirname "$0")" && pwd)")}
 token=$(kubectl get secrets/gitlab-docker-k8s --template={{.data.token}} |base64 -d || true)
 project_id=$(kubectl get secrets/gitlab-docker-k8s --template={{.data.simsplice}} |base64 -d || true)
