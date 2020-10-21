@@ -1,5 +1,27 @@
 # syntax=docker/dockerfile:experimental
-FROM bdgp/archdev as git
+FROM archlinux/base as git
+
+RUN pacman --noconfirm -Sy && \
+pacman --noconfirm -S --needed archlinux-keyring && \
+pacman --noconfirm --needed -S pacman pacman-mirrorlist sudo git base-devel \
+    && rm -rf /etc/pacman.d/mirrorlist.pacnew \
+    && pacman-db-upgrade
+
+# set locale
+RUN echo 'en_US.UTF-8 UTF-8' >>/etc/locale.gen && \
+locale-gen && \
+echo 'LANG=en_US.UTF-8' >/etc/locale.conf && \
+echo 'export LANG=en_US.UTF-8' >>/etc/profile && \
+echo 'export LC_ALL=en_US.UTF-8' >>/etc/profile
+
+RUN useradd -m -s /bin/bash bdgp && \
+chmod u+s /sbin/unix_chkpwd /sbin/su /sbin/sudo /sbin/passwd && \
+echo 'ALL ALL=(ALL) NOPASSWD:ALL' >>/etc/sudoers
+
+USER bdgp
+
+RUN cd /home/bdgp && git clone https://aur.archlinux.org/yay-bin.git && \
+cd /home/bdgp/yay-bin && makepkg -sri --noconfirm
 
 USER bdgp
 RUN yay -Sy --noconfirm --needed llvm llvm-libs clang libffi git openssh && yay -Sc --noconfirm ||true
@@ -20,7 +42,24 @@ cd simsplice && \
 source $HOME/.cargo/env && \
 cargo build
 
-FROM bdgp/archdev as install
+FROM archlinux/base as install
+
+RUN pacman --noconfirm -Sy && \
+pacman --noconfirm -S --needed archlinux-keyring && \
+pacman --noconfirm --needed -S pacman pacman-mirrorlist sudo git base-devel \
+    && rm -rf /etc/pacman.d/mirrorlist.pacnew \
+    && pacman-db-upgrade
+
+# set locale
+RUN echo 'en_US.UTF-8 UTF-8' >>/etc/locale.gen && \
+locale-gen && \
+echo 'LANG=en_US.UTF-8' >/etc/locale.conf && \
+echo 'export LANG=en_US.UTF-8' >>/etc/profile && \
+echo 'export LC_ALL=en_US.UTF-8' >>/etc/profile
+
+RUN useradd -m -s /bin/bash bdgp && \
+chmod u+s /sbin/unix_chkpwd /sbin/su /sbin/sudo /sbin/passwd && \
+echo 'ALL ALL=(ALL) NOPASSWD:ALL' >>/etc/sudoers
 
 USER bdgp
 RUN yay -Sy --noconfirm --needed samtools bcftools && yay -Sc --noconfirm ||true
