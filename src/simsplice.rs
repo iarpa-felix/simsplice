@@ -15,6 +15,7 @@ use flate2::Compression;
 use bigtools::bigwigread::BigWigRead;
 
 use bio::data_structures::interval_tree::IntervalTree;
+use bio::alphabets::dna::revcomp;
 
 use bio::io::fasta;
 use bio::io::fastq;
@@ -208,8 +209,12 @@ fn write_fastq_records(
 fn fillin_aligned_pairs(record: &bam::Record, modpos: i64, origseq: &[u8], modseq: &[u8]) -> Vec<u8> {
     let mut rng = rand::thread_rng();
     let ap = record.aligned_pairs();
-    let oldseq = record.seq().as_bytes();
-    let mut seq = Vec::from(record.seq().as_bytes());
+    let oldseq = if record.is_reverse() {
+        record.seq().as_bytes()
+    } else {
+        revcomp(record.seq().as_bytes())
+    };
+    let mut seq = oldseq.clone();
     for a in &ap {
         let qpos = a[0];
         let rpos = a[1];
@@ -475,11 +480,16 @@ fn main() -> Result<()> {
                                                 continue 'FILL_REGION_HISTO
                                             }
                                             let seq = fillin_aligned_pairs(record, modrecstart, origseq, modseq);
+                                            let qual = if record.is_reverse() {
+                                                record.qual().iter().map(|q| q+33).collect::<Vec<u8>>()
+                                            } else {
+                                                record.qual().iter().rev().map(|q| q+33).collect::<Vec<u8>>()
+                                            };
                                             let fastq_record = fastq::Record::with_attrs(
                                                 utf8(record.qname())?,
                                                 None,
                                                 &seq,
-                                                &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
+                                                &qual,
                                             );
                                             fastq_records[r] = Some(fastq_record);
                                         }
@@ -496,11 +506,16 @@ fn main() -> Result<()> {
 
                                                 let modpos = record.pos()-replacement.origpos+replacement.modpos;
                                                 let seq = fillin_aligned_pairs(record, modpos, origseq, modseq);
+                                                let qual = if record.is_reverse() {
+                                                    record.qual().iter().map(|q| q+33).collect::<Vec<u8>>()
+                                                } else {
+                                                    record.qual().iter().rev().map(|q| q+33).collect::<Vec<u8>>()
+                                                };
                                                 let fastq_record = fastq::Record::with_attrs(
                                                     utf8(record.qname())?,
                                                     None,
                                                     &seq,
-                                                    &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
+                                                    &qual,
                                                 );
                                                 fastq_records[r] = Some(fastq_record);
                                                 found_entry = true;
@@ -514,11 +529,18 @@ fn main() -> Result<()> {
                                     }
                                     // unmapped reads get passed through unchanged
                                     else {
+                                        let (seq, qual) = if record.is_reverse() {
+                                            (revcomp(record.seq().as_bytes()),
+                                             record.qual().iter().rev().map(|q| q+33).collect::<Vec<u8>>())
+                                        } else {
+                                            (record.seq().as_bytes(),
+                                             record.qual().iter().map(|q| q+33).collect::<Vec<u8>>())
+                                        };
                                         let fastq_record = fastq::Record::with_attrs(
                                             utf8(record.qname())?,
                                             None,
-                                            &record.seq().as_bytes(),
-                                            &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
+                                            &seq,
+                                            &qual,
                                         );
                                         fastq_records[r] = Some(fastq_record);
                                     }
@@ -584,11 +606,16 @@ fn main() -> Result<()> {
                             let replacement = entry.data();
                             let modpos = record.pos()-replacement.origpos+replacement.modpos;
                             let seq = fillin_aligned_pairs(record, modpos, origseq, modseq);
+                            let qual = if record.is_reverse() {
+                                record.qual().iter().rev().map(|q| q+33).collect::<Vec<u8>>()
+                            } else {
+                                record.qual().iter().map(|q| q+33).collect::<Vec<u8>>()
+                            };
                             let fastq_record = fastq::Record::with_attrs(
                                 utf8(record.qname())?,
                                 None,
-                                seq.as_slice(),
-                                &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
+                                &seq,
+                                &qual,
                             );
                             fastq_records[r] = Some(fastq_record);
                             found_entry = true;
@@ -601,11 +628,18 @@ fn main() -> Result<()> {
                     }
                     // unmapped reads get passed through unchanged
                     else {
+                        let (seq, qual) = if record.is_reverse() {
+                            (revcomp(record.seq().as_bytes()),
+                             record.qual().iter().rev().map(|q| q+33).collect::<Vec<u8>>())
+                        } else {
+                            (record.seq().as_bytes(),
+                             record.qual().iter().map(|q| q+33).collect::<Vec<u8>>())
+                        };
                         let fastq_record = fastq::Record::with_attrs(
                            utf8(record.qname())?,
                            None,
-                           &record.seq().as_bytes(),
-                           &record.qual().iter().map(|q| q+33).collect::<Vec<u8>>(),
+                           &seq,
+                           &qual,
                         );
                        fastq_records[r] = Some(fastq_record);
                     }
