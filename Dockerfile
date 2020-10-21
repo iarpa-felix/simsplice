@@ -62,8 +62,10 @@ chmod u+s /sbin/unix_chkpwd /sbin/su /sbin/sudo /sbin/passwd && \
 echo 'ALL ALL=(ALL) NOPASSWD:ALL' >>/etc/sudoers
 
 USER bdgp
-RUN yay -Sy --noconfirm --needed samtools bcftools && yay -Sc --noconfirm ||true
+RUN yay -Sy --noconfirm --needed samtools bcftools pigz parallel htop rsync && yay -Sc --noconfirm ||true
 USER root
+
+RUN rsync -avP rsync://hgdownload.soe.ucsc.edu/genome/admin/exe/linux.x86_64/{bedGraphToBigWig,bigWigToBedGraph,faToTwoBit,bedToBigBed,bigBedToBed} /usr/bin
 
 RUN --mount=type=bind,target=/root/simsplice,source=/root/simsplice,from=git,rw \
 cp -v /root/simsplice/target/debug/{simsplice,genvcf,liftover} /root/simsplice/*.sh /usr/bin
