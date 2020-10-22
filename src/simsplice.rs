@@ -209,11 +209,7 @@ fn write_fastq_records(
 fn fillin_aligned_pairs(record: &bam::Record, modpos: i64, origseq: &[u8], modseq: &[u8]) -> Vec<u8> {
     let mut rng = rand::thread_rng();
     let ap = record.aligned_pairs();
-    let oldseq = if record.is_reverse() {
-        record.seq().as_bytes()
-    } else {
-        revcomp(record.seq().as_bytes())
-    };
+    let oldseq = record.seq().as_bytes();
     let mut seq = oldseq.clone();
     for a in &ap {
         let qpos = a[0];
@@ -480,10 +476,12 @@ fn main() -> Result<()> {
                                                 continue 'FILL_REGION_HISTO
                                             }
                                             let seq = fillin_aligned_pairs(record, modrecstart, origseq, modseq);
-                                            let qual = if record.is_reverse() {
-                                                record.qual().iter().map(|q| q+33).collect::<Vec<u8>>()
+                                            let (seq, qual) = if record.is_reverse() {
+                                                (revcomp(seq),
+                                                 record.qual().iter().rev().map(|q| q+33).collect::<Vec<u8>>())
                                             } else {
-                                                record.qual().iter().rev().map(|q| q+33).collect::<Vec<u8>>()
+                                                (seq,
+                                                 record.qual().iter().map(|q| q+33).collect::<Vec<u8>>())
                                             };
                                             let fastq_record = fastq::Record::with_attrs(
                                                 utf8(record.qname())?,
@@ -506,10 +504,12 @@ fn main() -> Result<()> {
 
                                                 let modpos = record.pos()-replacement.origpos+replacement.modpos;
                                                 let seq = fillin_aligned_pairs(record, modpos, origseq, modseq);
-                                                let qual = if record.is_reverse() {
-                                                    record.qual().iter().map(|q| q+33).collect::<Vec<u8>>()
+                                                let (seq, qual) = if record.is_reverse() {
+                                                    (revcomp(seq),
+                                                     record.qual().iter().rev().map(|q| q+33).collect::<Vec<u8>>())
                                                 } else {
-                                                    record.qual().iter().rev().map(|q| q+33).collect::<Vec<u8>>()
+                                                    (seq,
+                                                     record.qual().iter().map(|q| q+33).collect::<Vec<u8>>())
                                                 };
                                                 let fastq_record = fastq::Record::with_attrs(
                                                     utf8(record.qname())?,
@@ -606,10 +606,12 @@ fn main() -> Result<()> {
                             let replacement = entry.data();
                             let modpos = record.pos()-replacement.origpos+replacement.modpos;
                             let seq = fillin_aligned_pairs(record, modpos, origseq, modseq);
-                            let qual = if record.is_reverse() {
-                                record.qual().iter().rev().map(|q| q+33).collect::<Vec<u8>>()
+                            let (seq, qual) = if record.is_reverse() {
+                                (revcomp(seq),
+                                 record.qual().iter().rev().map(|q| q+33).collect::<Vec<u8>>())
                             } else {
-                                record.qual().iter().map(|q| q+33).collect::<Vec<u8>>()
+                                (seq,
+                                 record.qual().iter().map(|q| q+33).collect::<Vec<u8>>())
                             };
                             let fastq_record = fastq::Record::with_attrs(
                                 utf8(record.qname())?,
