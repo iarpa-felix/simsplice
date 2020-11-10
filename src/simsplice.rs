@@ -20,7 +20,7 @@ use bio::alphabets::dna::revcomp;
 use bio::io::fasta;
 use bio::io::fastq;
 
-use slog::info;
+use slog::{info, warn};
 use slog::Drain;
 use slog_term;
 
