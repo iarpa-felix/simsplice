@@ -599,37 +599,33 @@ fn main() -> Result<()> {
                     if !record.is_unmapped() {
                         let record_pos = record.pos();
                         let refname = utf8(header.target_names().get(record.tid() as usize).r()?)?;
-                        if let Some(origseq) = origrefseqs.get(refname) {
-                            let modseq = modrefseqs.get(refname).r()?;
-                            let mut found_entry = false;
-                            for entry in tree.get(refname).r()?.find(record_pos..record_pos + 1) {
-                                let replacement = entry.data();
-                                let modpos = record.pos()-replacement.origpos+replacement.modpos;
-                                let seq = fillin_aligned_pairs(record, modpos, origseq, modseq);
-                                let (seq, qual) = if record.is_reverse() {
-                                    (revcomp(seq),
-                                     record.qual().iter().rev().map(|q| q+33).collect::<Vec<u8>>())
-                                } else {
-                                    (seq,
-                                     record.qual().iter().map(|q| q+33).collect::<Vec<u8>>())
-                                };
-                                let fastq_record = fastq::Record::with_attrs(
-                                    utf8(record.qname())?,
-                                    None,
-                                    &seq,
-                                    &qual,
-                                );
-                                fastq_records[r] = Some(fastq_record);
-                                found_entry = true;
-                                break;
-                            }
-                            if !found_entry {
-                                //info!(log, "Dropped record {}", utf8(record.qname())?);
-                                continue 'READ_PAIR;
-                            }
+                        let origseq = origrefseqs.get(refname).r()?;
+                        let modseq = modrefseqs.get(refname).r()?;
+                        let mut found_entry = false;
+                        for entry in tree.get(refname).r()?.find(record_pos..record_pos + 1) {
+                            let replacement = entry.data();
+                            let modpos = record.pos()-replacement.origpos+replacement.modpos;
+                            let seq = fillin_aligned_pairs(record, modpos, origseq, modseq);
+                            let (seq, qual) = if record.is_reverse() {
+                                (revcomp(seq),
+                                    record.qual().iter().rev().map(|q| q+33).collect::<Vec<u8>>())
+                            } else {
+                                (seq,
+                                    record.qual().iter().map(|q| q+33).collect::<Vec<u8>>())
+                            };
+                            let fastq_record = fastq::Record::with_attrs(
+                                utf8(record.qname())?,
+                                None,
+                                &seq,
+                                &qual,
+                            );
+                            fastq_records[r] = Some(fastq_record);
+                            found_entry = true;
+                            break;
                         }
-                        else {
-                            warn!(log, "Could not find refname {} in assembly containing {:?}", refname, origrefseqs);
+                        if !found_entry {
+                            //info!(log, "Dropped record {}", utf8(record.qname())?);
+                            continue 'READ_PAIR;
                         }
                     }
                     // unmapped reads get passed through unchanged
