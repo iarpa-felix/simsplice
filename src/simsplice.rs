@@ -629,7 +629,7 @@ fn main() -> Result<()> {
                             }
                         }
                         else {
-                            warning!(log, "Could not find refname {} in assembly containing {:?}", refname, origrefseqs);
+                            warn!(log, "Could not find refname {} in assembly containing {:?}", refname, origrefseqs);
                         }
                     }
                     // unmapped reads get passed through unchanged
