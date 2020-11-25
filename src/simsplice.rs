@@ -114,7 +114,7 @@ impl ReadPair {
     fn from_bamfile(collated_bamfile: &str) -> Result<ReadPair> {
         let mut collated_bam = bam::Reader::from_path(&collated_bamfile)?;
         let mut record = bam::Record::new();
-        collated_bam.read(&mut record)?;
+        collated_bam.read(&mut record).r()??;
         let read_qname = Vec::from(record.qname());
         Ok(ReadPair {
             collated_bamfile: collated_bamfile.to_string(),
@@ -144,7 +144,7 @@ impl ReadPair {
                 };
                 self.is_paired = true;
             }
-            if !self.collated_bam.read(&mut self.record)? {
+            if !self.collated_bam.read(&mut self.record).is_some() {
                 self.eof = true;
                 break
             }
@@ -210,7 +210,7 @@ fn fillin_aligned_pairs(record: &bam::Record, modpos: i64, origseq: &[u8], modse
     let ap = record.aligned_pairs();
     let oldseq = record.seq().as_bytes();
     let mut seq = oldseq.clone();
-    for a in &ap {
+    for a in ap {
         let qpos = a[0];
         let rpos = a[1];
         let newrpos = rpos-record.pos()+modpos;

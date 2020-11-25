@@ -195,7 +195,8 @@ fn main() -> Result<()> {
     if options.append {
         let mut read_vcf = bcf::Reader::from_path(&options.vcffile)?;
         let mut record = vcf.empty_record();
-        while read_vcf.read(&mut record)? {
+        while let Some(result) = read_vcf.read(&mut record) {
+            let result = result?;
             vcf.write(&record)?;
 
             let contig = std::str::from_utf8(read_vcf.header().rid2name(record.rid().r()?)?)?;

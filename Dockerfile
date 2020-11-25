@@ -17,7 +17,7 @@ cd simsplice && \
 curl https://sh.rustup.rs -sSf | sh -s -- -y && \
 source $HOME/.cargo/env && \
 rustup default stable && \
-cargo build --release
+cargo build
 
 FROM ubuntu:focal as install
 SHELL ["/bin/bash", "-lc"]
@@ -32,4 +32,4 @@ RUN locale-gen en_US.UTF-8
 RUN rsync -avP rsync://hgdownload.soe.ucsc.edu/genome/admin/exe/linux.x86_64/{bedGraphToBigWig,bigWigToBedGraph,faToTwoBit,bedToBigBed,bigBedToBed} /usr/bin
 
 RUN --mount=type=bind,target=/root/simsplice,source=/root/simsplice,from=build,rw \
-cp -v /root/simsplice/target/release/{simsplice,genvcf,liftover} /root/simsplice/*.sh /usr/bin
+cp -v /root/simsplice/target/debug/{simsplice,genvcf,liftover} /root/simsplice/*.sh /usr/bin
