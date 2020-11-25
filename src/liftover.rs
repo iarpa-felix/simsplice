@@ -18,8 +18,7 @@ use linked_hash_map::LinkedHashMap;
 use std::ops::{Range, Neg};
 use bio::io::gff;
 
-pub type Report = eyre::Report<color_eyre::Context>;
-pub type Result<T, E = Report> = core::result::Result<T, E>;
+use eyre::Result;
 trait ToResult<T> {
     fn r(self) -> Result<T>;
 }

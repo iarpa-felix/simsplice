@@ -57,8 +57,7 @@ use std::str::{from_utf8 as utf8};
 // - position moved reads by start site
 
 use eyre::{bail, eyre};
-pub type Report = eyre::Report<color_eyre::Context>;
-pub type Result<T, E = Report> = core::result::Result<T, E>;
+use eyre::Result;
 trait ToResult<T> {
     fn r(self) -> Result<T>;
 }

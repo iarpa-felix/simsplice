@@ -23,8 +23,7 @@ use bio::data_structures::interval_tree::IntervalTree;
 use uuid::Uuid;
 
 use eyre::{eyre, bail};
-pub type Report = eyre::Report<color_eyre::Context>;
-pub type Result<T, E = Report> = core::result::Result<T, E>;
+use eyre::Result;
 trait ToResult<T> {
     fn r(self) -> Result<T>;
 }
